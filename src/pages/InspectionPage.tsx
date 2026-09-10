@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ClipboardCheck, RotateCcw } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { ClipboardCheck, Minus, Plus, RotateCcw, X } from 'lucide-react'
 import diskette from '../assets/diskette.png'
 import { LINE_NAME, SUPPORT_TEAM } from '../data/equipment'
 import { useAppData } from '../context/AppDataContext'
@@ -130,7 +131,8 @@ function mergeRecord(
 }
 
 export function InspectionPage() {
-  const { equipmentList, inspectors, inspections, saveInspection, deleteInspection } = useAppData()
+  const navigate = useNavigate()
+  const { equipmentList, inspectors, inspections, saveCatalog, saveInspection, deleteInspection } = useAppData()
   const today = todayKey()
   const now = new Date()
   const inspectionsRef = useRef(inspections)
@@ -146,6 +148,8 @@ export function InspectionPage() {
   const [issueNote, setIssueNote] = useState('')
   const [requestDate, setRequestDate] = useState('')
   const [confirmDate, setConfirmDate] = useState('')
+  const [tabDeleteMode, setTabDeleteMode] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   const equipment = useMemo(
     () => equipmentList.find((item) => item.id === equipmentId) ?? equipmentList[0],
@@ -311,6 +315,14 @@ export function InspectionPage() {
     setConfirmDate('')
   }
 
+  const confirmDelete = () => {
+    if (!pendingDeleteId) return
+    const next = equipmentList.filter((item) => item.id !== pendingDeleteId)
+    saveCatalog(next, inspectors)
+    setEquipmentId((current) => (current === pendingDeleteId ? next[0]?.id ?? '' : current))
+    setPendingDeleteId(null)
+  }
+
   const flashSaved = () => {
     setSavedFlash(true)
     window.setTimeout(() => setSavedFlash(false), 1400)
@@ -339,21 +351,50 @@ export function InspectionPage() {
         </div>
       </div>
 
+      <div className="page-tabs">
+        {equipmentList.map((item) => (
+          <div key={item.id} className={`chip ${item.id === equipment?.id ? 'active' : ''}`}>
+            <button
+              type="button"
+              onClick={() => setEquipmentId(item.id)}
+              onFocus={() => setEquipmentId(item.id)}
+            >
+              {item.shortName || item.name}
+            </button>
+            {tabDeleteMode ? (
+              <button
+                className="chip-x"
+                type="button"
+                tabIndex={-1}
+                aria-label={`${item.shortName || item.name} 삭제`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setPendingDeleteId(item.id)
+                }}
+              >
+                <X size={11} strokeWidth={3} />
+              </button>
+            ) : null}
+          </div>
+        ))}
+        <button className="chip chip-add" type="button" onClick={() => navigate('/settings')}>
+          <Plus size={14} />
+          추가
+        </button>
+        <button
+          className={`chip chip-add ${tabDeleteMode ? 'is-on' : ''}`}
+          type="button"
+          onClick={() => {
+            setTabDeleteMode((value) => !value)
+            setPendingDeleteId(null)
+          }}
+        >
+          <Minus size={14} />
+          삭제
+        </button>
+      </div>
+
       <div className="date-bar">
-        <label className="grid-control">
-          <span className="date-bar-label">설비</span>
-          <select
-            className="select"
-            value={equipment?.id ?? ''}
-            onChange={(event) => setEquipmentId(event.target.value)}
-          >
-            {equipmentList.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
         <label className="grid-control">
           <span className="date-bar-label">조회 월</span>
           <input
@@ -587,6 +628,28 @@ export function InspectionPage() {
             >
               다음 달
             </button>
+          </div>
+        </div>
+      )}
+
+      {pendingDeleteId && (
+        <div className="modal-backdrop confirm-backdrop no-print" onClick={() => setPendingDeleteId(null)}>
+          <div
+            className="confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="equip-delete-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p id="equip-delete-title">삭제 하시겠습니까?</p>
+            <div className="confirm-modal-actions">
+              <button className="secondary-btn" type="button" onClick={() => setPendingDeleteId(null)}>
+                아니오
+              </button>
+              <button className="primary-btn" type="button" onClick={confirmDelete}>
+                예
+              </button>
+            </div>
           </div>
         </div>
       )}

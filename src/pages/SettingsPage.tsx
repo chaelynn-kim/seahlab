@@ -203,7 +203,7 @@ export function SettingsPage() {
           </div>
           <button className="secondary-btn" type="button" onClick={addEquipment}>
             <Plus size={16} />
-            설비 추가
+            추가
           </button>
           <div className="settings-equip-list">
             {draftEquipment.map((item) => (

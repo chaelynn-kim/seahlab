@@ -22,16 +22,19 @@ import {
   upsertInspection,
   type InspectionDraft,
 } from '../lib/inspections'
-import type { ActivityLog, Equipment, InspectionRecord } from '../types'
+import { loadChemicalLedgers, saveChemicalLedgers } from '../lib/chemicals'
+import type { ActivityLog, ChemicalLedger, Equipment, InspectionRecord } from '../types'
 
 interface AppDataContextValue {
   equipmentList: Equipment[]
   inspectors: string[]
   inspections: InspectionRecord[]
   logs: ActivityLog[]
+  chemicalLedgers: ChemicalLedger[]
   saveCatalog: (equipment: Equipment[], inspectorNames: string[]) => void
   saveInspection: (draft: InspectionDraft, options?: { log?: boolean }) => InspectionRecord
   deleteInspection: (id: string) => void
+  saveChemicalLedgersAll: (list: ChemicalLedger[]) => void
   deleteLog: (id: string) => void
   refreshLogs: () => void
 }
@@ -45,6 +48,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const inspectionsRef = useRef(inspections)
   inspectionsRef.current = inspections
   const [logs, setLogs] = useState<ActivityLog[]>(() => loadActivityLogs())
+  const [chemicalLedgers, setChemicalLedgers] = useState<ChemicalLedger[]>(() => loadChemicalLedgers())
 
   const refreshLogs = useCallback(() => {
     setLogs(loadActivityLogs())
@@ -111,6 +115,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [findEquipment, refreshLogs],
   )
 
+  const saveChemicalLedgersAll = useCallback(
+    (list: ChemicalLedger[]) => {
+      const next = saveChemicalLedgers(list)
+      setChemicalLedgers(next)
+      appendActivityLog(DEFAULT_ACTOR, '화학물질 대장 저장', `물질 ${next.length}종`)
+      refreshLogs()
+    },
+    [refreshLogs],
+  )
+
   const deleteLog = useCallback(
     (id: string) => {
       const target = logs.find((item) => item.id === id)
@@ -130,9 +144,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       inspectors,
       inspections,
       logs,
+      chemicalLedgers,
       saveCatalog,
       saveInspection,
       deleteInspection,
+      saveChemicalLedgersAll,
       deleteLog,
       refreshLogs,
     }),
@@ -141,9 +157,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       inspectors,
       inspections,
       logs,
+      chemicalLedgers,
       saveCatalog,
       saveInspection,
       deleteInspection,
+      saveChemicalLedgersAll,
       deleteLog,
       refreshLogs,
     ],

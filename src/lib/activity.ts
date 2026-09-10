@@ -41,4 +41,5 @@ export const ACTIVITY_ACTIONS: ActivityAction[] = [
   '점검 기록 삭제',
   '이력 삭제',
   '설정 변경',
+  '화학물질 대장 저장',
 ]

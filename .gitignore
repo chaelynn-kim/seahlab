@@ -3,3 +3,6 @@ dist
 .DS_Store
 *.local
 form.xlsx
+.tmp-xlsx
+.tmp-xlsx.zip
+.tmp-*

@@ -7,6 +7,9 @@ export default defineConfig({
     port: 5280,
     strictPort: true,
     host: true,
+    watch: {
+      ignored: ['**/.tmp-*', '**/.tmp-xlsx/**'],
+    },
   },
   preview: {
     port: 4280,

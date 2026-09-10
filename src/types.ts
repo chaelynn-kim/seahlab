@@ -46,6 +46,7 @@ export type ActivityAction =
   | '점검 기록 삭제'
   | '이력 삭제'
   | '설정 변경'
+  | '화학물질 대장 저장'
 
 export interface ActivityLog {
   id: string
@@ -53,4 +54,54 @@ export interface ActivityLog {
   user: UserProfile
   action: ActivityAction
   detail: string
+}
+
+export interface ChemicalActivities {
+  manufacture: boolean
+  import: boolean
+  use: boolean
+  sale: boolean
+}
+
+export interface ChemicalLedgerMeta {
+  productName: string
+  mainUse: string
+  activities: ChemicalActivities
+  category1: string
+  category2: string
+  category3: string
+  content: string
+  content1: string
+  content2: string
+  content3: string
+  unit: string
+}
+
+export interface ChemicalLedgerRow {
+  id: string
+  inDate: string
+  carryOver: string
+  inType: string
+  inQty: string
+  inName: string
+  inBizNo: string
+  inAddress: string
+  inPhone: string
+  outDate: string
+  outType: string
+  outQty: string
+  outName: string
+  outBizNo: string
+  outAddress: string
+  outPhone: string
+  stock: string
+  note: string
+  extra: Record<string, string>
+}
+
+export interface ChemicalLedger {
+  id: string
+  tabName: string
+  meta: ChemicalLedgerMeta
+  rows: ChemicalLedgerRow[]
 }

@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { ClipboardCheck, History, Menu, Settings } from 'lucide-react'
+import { ClipboardCheck, FlaskConical, History, Menu, Settings } from 'lucide-react'
 import { SeahLogo } from '../brand/SeahLogo'
 
 const NAV = [
   { to: '/inspection', key: 'inspection', label: '일상 점검', icon: ClipboardCheck },
+  { to: '/chemicals', key: 'chemicals', label: '화학물질 대장', icon: FlaskConical },
   { to: '/history', key: 'history', label: '이력 로그', icon: History },
   { to: '/settings', key: 'settings', label: '설정', icon: Settings },
 ] as const
