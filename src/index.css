@@ -2,8 +2,8 @@
   --accent: #e04a2a;
   --accent-hover: #c73e22;
   --accent-soft: #fde8e3;
-  --sidebar: #2a2a2a;
-  --sidebar-hover: #3a3a3a;
+  --sidebar: #f4f3f1;
+  --sidebar-hover: #eceae6;
   --header: #2a2a2a;
   --bg: #f4f3f1;
   --card: #ffffff;
@@ -19,6 +19,10 @@
   --radius: 12px;
   --sidebar-width: 232px;
   --header-height: 64px;
+  --chem-tab-h: 50px;
+  --type-up: 2pt;
+  --form-text: 12px;
+  --form-entry: 9px;
 }
 
 * {
@@ -207,13 +211,22 @@ a {
   width: var(--sidebar-width);
   flex-shrink: 0;
   background: var(--sidebar);
-  padding: 16px 12px;
+  border-right: 1px solid var(--border);
+  padding: 20px 14px;
+}
+
+.nav-kicker {
+  margin: 0 12px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
 }
 
 .nav-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .nav-item {
@@ -223,12 +236,12 @@ a {
   width: 100%;
   border: 0;
   background: transparent;
-  color: #c8c8c8;
-  border-radius: 999px;
+  color: #333;
+  border-radius: 12px;
   padding: 11px 14px;
   text-align: left;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .nav-item.active {
@@ -238,7 +251,7 @@ a {
 
 .nav-item:hover:not(.active) {
   background: var(--sidebar-hover);
-  color: #fff;
+  color: var(--text);
 }
 
 .main {
@@ -247,23 +260,90 @@ a {
   padding: 24px;
 }
 
+.main:has(.chem-page),
+.main:has(.insp-page) {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - var(--header-height));
+}
+
+.app-shell:has(.is-compose) .header,
+.app-shell:has(.is-compose) .sidebar,
+.app-shell:has(.is-compose) .overlay {
+  display: none !important;
+}
+
+.app-shell:has(.is-compose) .body,
+.app-shell:has(.is-compose) .main:has(.chem-page),
+.app-shell:has(.is-compose) .main:has(.insp-page) {
+  min-height: 100vh;
+}
+
+.app-shell:has(.is-compose) .main {
+  padding: 12px 16px 16px;
+}
+
+.is-compose .page-head {
+  display: none;
+}
+
+.is-compose .chem-toolbar {
+  margin-bottom: 8px;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: #e8e6e3;
+  border-radius: 16px;
+}
+
+.page-head-copy {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.page-head-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #2a2a2a;
+  color: #fff;
+  display: grid;
+  place-items: center;
+}
+
+.page-head-text {
+  min-width: 0;
+}
+
 .page-head .card-actions {
   margin-top: 0;
   flex-wrap: wrap;
+  flex-shrink: 0;
+  align-self: center;
 }
 
 .page-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 6px;
-  font-size: 24px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
 }
 
 .page-desc {
-  margin: 0;
+  margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.45;
 }
 
 .toolbar {
@@ -760,6 +840,8 @@ a {
 .criteria-num {
   color: #c62828;
   font-weight: 800;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
 }
 
 .day-note {
@@ -1300,6 +1382,70 @@ a {
   gap: 12px;
 }
 
+.log-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.log-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.log-filter-field > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8a8a8a;
+}
+
+.log-filter-select,
+.log-filter-field input {
+  height: 40px;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: #fff;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.log-filter-select {
+  min-width: 148px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.log-filter-search {
+  flex: 1 1 240px;
+}
+
+.log-filter-aside {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  height: 40px;
+}
+
+.log-filter .count-label {
+  margin-left: 0;
+  white-space: nowrap;
+}
+
 .log-table-wrap {
   overflow: auto;
   background: #fff;
@@ -1576,6 +1722,17 @@ a {
 
   .page-head {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-head .card-actions {
+    width: 100%;
+  }
+
+  .log-filter-search,
+  .log-filter-aside {
+    flex: 1 1 100%;
+    margin-left: 0;
   }
 
   .header-right .user-chip .meta {
@@ -1693,6 +1850,914 @@ a {
   padding: 8px 6px 2px 0;
 }
 
+.chem-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chem-page .page-head,
+.chem-page .chem-toolbar,
+.chem-page .chem-sheet-tools {
+  flex-shrink: 0;
+}
+
+.chem-toolbar {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.date-bar.chem-year-bar {
+  padding: 0 12px;
+  margin: 0;
+  gap: 10px;
+  height: var(--chem-tab-h);
+  min-height: var(--chem-tab-h);
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.date-bar.chem-tab-bar {
+  flex: 1 1 240px;
+  min-width: 0;
+  min-height: var(--chem-tab-h);
+  height: auto;
+  margin: 0;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+}
+
+.chem-year-bar .date-bar-label {
+  font-size: 13px;
+}
+
+.chem-year-bar .grid-control {
+  width: auto;
+  flex: 0 0 auto;
+  height: 100%;
+}
+
+.chem-year-bar .select {
+  min-width: 108px;
+  max-width: 140px;
+  width: auto;
+  flex: none;
+  height: 36px;
+  min-height: 36px;
+  padding: 8px 28px 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  line-height: 1.2;
+}
+
+.chem-year-pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.chem-year-pick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chem-year-pick-btn svg {
+  flex-shrink: 0;
+  color: #555;
+}
+
+.chem-year-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: max(100%, 5.75rem);
+  width: max-content;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.chem-year-menu button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 7px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chem-year-menu button:hover,
+.chem-year-menu button.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chem-page .page-tabs,
+.insp-page .page-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+  padding: 0;
+  gap: 6px;
+  align-items: center;
+}
+
+.chem-page .page-tabs .chip,
+.insp-page .page-tabs .chip {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f0eeeb;
+  color: #3a3a3a;
+  border: 0;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.chem-page .page-tabs .chip.active,
+.insp-page .page-tabs .chip.active {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.chem-page .page-tabs .chip-add,
+.insp-page .page-tabs .chip-add {
+  background: #eeecea;
+  color: #8a8a8a;
+  border: 1px dashed #c4c1bb;
+}
+
+.chem-page .page-tabs .chip-add:hover,
+.insp-page .page-tabs .chip-add:hover {
+  background: #e4e1db;
+  color: #666;
+}
+
+.chem-page .page-tabs .chip-add.is-edit,
+.insp-page .page-tabs .chip-add.is-edit {
+  background: #fff4ee;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.insp-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.insp-page .page-head,
+.insp-page .chem-toolbar,
+.insp-page .chem-sheet-tools,
+.insp-page .grid-hint {
+  flex-shrink: 0;
+}
+
+.insp-sheet-progress {
+  margin: 0 auto 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.insp-month-shift {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insp-month-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 10px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: #444;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.insp-month-nav:last-of-type {
+  padding: 0 6px 0 10px;
+}
+
+.insp-month-nav svg {
+  flex-shrink: 0;
+}
+
+.date-bar.insp-month-bar {
+  height: auto;
+  min-height: var(--chem-tab-h);
+  padding: 7px 12px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.insp-month-bar .grid-control {
+  height: auto;
+  gap: 8px;
+}
+
+.insp-month-bar .select,
+.insp-month-bar input.select {
+  min-width: 0;
+  max-width: none;
+  width: 7.35rem;
+  padding: 8px 8px;
+}
+
+.insp-month-bar input[type='month']::-webkit-datetime-edit,
+.insp-month-bar input[type='month']::-webkit-datetime-edit-fields-wrapper,
+.insp-month-bar input[type='month']::-webkit-datetime-edit-text,
+.insp-month-bar input[type='month']::-webkit-datetime-edit-month-field,
+.insp-month-bar input[type='month']::-webkit-datetime-edit-year-field {
+  padding: 0;
+  margin: 0;
+}
+
+.insp-month-bar input[type='month']::-webkit-calendar-picker-indicator {
+  margin: 0 0 0 8px;
+  padding: 0;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.insp-all-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.insp-all-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  gap: 20px;
+  padding: 10px 0 12px;
+}
+
+.insp-stack-paper {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.insp-stack-paper .insp-paper {
+  flex: none;
+  overflow: visible;
+}
+
+.insp-stack-badge {
+  position: absolute;
+  top: -10px;
+  right: 0;
+  z-index: 1;
+  pointer-events: none;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.insp-paper {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #111;
+  padding: 6px;
+}
+
+.insp-sheet {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+  color: #111;
+  font-size: var(--form-text);
+}
+
+.insp-sheet col.col-equip { width: 8%; }
+.insp-sheet col.col-no { width: 3%; }
+.insp-sheet col.col-point { width: 9%; }
+.insp-sheet col.col-timing { width: 3%; }
+.insp-sheet col.col-criteria { width: 13%; }
+.insp-sheet col.col-day { width: 2.06%; }
+.insp-sheet col.col-edit { width: 36px; }
+.insp-sheet col.col-kind { width: 72px; }
+
+.insp-sheet.is-form-edit th,
+.insp-sheet.is-form-edit td {
+  position: relative;
+  overflow: visible;
+}
+
+.insp-sheet.is-form-edit .chem-col-handle,
+.insp-sheet.is-form-edit .chem-row-handle {
+  z-index: 6;
+}
+
+.insp-sheet.is-form-edit .chem-col-handle {
+  width: 14px;
+  right: -7px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.insp-sheet.is-form-edit .chem-row-handle {
+  height: 14px;
+  bottom: -7px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.insp-sheet.is-form-edit .insp-mark,
+.insp-sheet.is-form-edit .insp-reading,
+.insp-sheet.is-form-edit .insp-reading-wrap,
+.insp-sheet.is-form-edit .insp-cols .day-col button,
+.insp-sheet.is-form-edit .insp-foot-body textarea,
+.insp-sheet.is-form-edit .insp-foot-date {
+  position: relative;
+  z-index: 0;
+}
+
+.insp-sheet th,
+.insp-sheet td {
+  border: 1px solid #111;
+  padding: 2px 3px;
+  text-align: center;
+  vertical-align: middle;
+  background: #fff;
+  overflow: hidden;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.insp-sheet .insp-banner th,
+.insp-sheet .insp-banner td {
+  font-weight: 700;
+  padding: 4px 6px;
+}
+
+.insp-sheet-title {
+  font-size: 15pt;
+  letter-spacing: -0.02em;
+}
+
+.insp-banner-title .insp-sheet-title {
+  border-bottom: 1px solid #111;
+}
+
+.insp-support {
+  font-size: 13pt;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.85em;
+  vertical-align: middle;
+}
+
+.insp-inspector {
+  padding: 0 4px !important;
+}
+
+.insp-inspector-select {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  text-align-last: center;
+  cursor: pointer;
+}
+
+.insp-inspector-select.select-warn {
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 4px;
+}
+
+.insp-approval {
+  padding: 0 !important;
+  width: 7.2%;
+  min-width: 72px;
+  vertical-align: stretch;
+}
+
+.insp-sheet.is-form-edit .insp-stamp {
+  pointer-events: none;
+}
+
+.insp-sheet.is-form-edit .insp-stamp .insp-sheet-input {
+  pointer-events: auto;
+}
+
+.insp-stamp {
+  width: 100%;
+  height: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.insp-stamp th,
+.insp-stamp td {
+  border: 0;
+  border-right: 1px solid #111;
+  border-bottom: 1px solid #111;
+  padding: 2px 3px;
+  background: #fff;
+}
+
+.insp-stamp tr:last-child th,
+.insp-stamp tr:last-child td {
+  border-bottom: 0;
+}
+
+.insp-stamp th:last-child,
+.insp-stamp td:last-child {
+  border-right: 0;
+}
+
+.insp-stamp-label,
+.insp-sheet .insp-banner .insp-stamp-label {
+  font-size: var(--form-text);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
+}
+
+.insp-stamp .insp-stamp-label {
+  width: 1.5em;
+}
+
+.insp-stamp-label span {
+  display: block;
+}
+
+.insp-stamp-role,
+.insp-sheet .insp-banner .insp-stamp-role {
+  font-size: var(--form-text);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.insp-stamp .insp-stamp-role {
+  height: 38%;
+}
+
+.insp-stamp-sign,
+.insp-sheet .insp-banner .insp-stamp-sign {
+  padding: 1px 4px !important;
+}
+
+.insp-stamp .insp-stamp-sign {
+  height: 62%;
+}
+
+.insp-stamp-sign img {
+  display: block;
+  width: 100%;
+  height: 28px;
+  object-fit: contain;
+}
+
+.insp-sheet .insp-banner .insp-stamp-label,
+.insp-sheet .insp-banner .insp-stamp-role,
+.insp-sheet .insp-banner .insp-stamp-sign {
+  padding: 1px 2px;
+}
+
+.insp-sheet .insp-cols th {
+  font-size: var(--form-text);
+  font-weight: 800;
+  background: #faf9f7;
+}
+
+.insp-sheet .insp-equip {
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.insp-sheet .insp-equip strong {
+  display: block;
+  font-size: 11pt;
+  font-weight: 700;
+}
+
+.insp-sheet .insp-equip span {
+  display: block;
+  margin-top: 4px;
+  font-size: 9.5pt;
+  font-weight: 400;
+}
+
+.insp-equip-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+}
+
+.insp-equip-edit input:first-child {
+  font-size: 13pt;
+  font-weight: 700;
+}
+
+.insp-equip-edit input:last-child {
+  font-size: 11.5pt;
+  font-weight: 400;
+}
+
+.insp-point,
+.insp-criteria {
+  text-align: left;
+}
+
+.insp-sheet .day-col {
+  padding: 0;
+  width: 2.06%;
+  min-width: 0;
+}
+
+.insp-sheet .day-col.is-today {
+  background: #fff7f4;
+}
+
+.insp-sheet .day-col.is-active {
+  background: var(--accent-soft);
+}
+
+.insp-sheet .insp-cols .day-col.is-today button {
+  color: var(--accent);
+}
+
+.insp-sheet .insp-cols .day-col button {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  padding: 3px 0;
+}
+
+.insp-sheet tbody td,
+.insp-sheet tbody th {
+  height: 28px;
+}
+
+.insp-mark,
+.insp-reading,
+.insp-fraction input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 26px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  padding: 2px 0;
+  box-sizing: border-box;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.insp-reading::-webkit-outer-spin-button,
+.insp-reading::-webkit-inner-spin-button,
+.insp-sheet-input[type='number']::-webkit-outer-spin-button,
+.insp-sheet-input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.insp-reading-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 26px;
+}
+
+.insp-unit-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: #c4c4c4;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  z-index: 0;
+}
+
+.insp-reading-wrap .insp-reading {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+.insp-reading-wrap.has-value .insp-unit-hint {
+  display: none;
+}
+
+.insp-mark.is-ok { color: var(--ok); }
+.insp-mark.is-bad { color: var(--warn); }
+.insp-mark.is-off { color: #4a5d73; }
+
+.insp-fraction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.insp-fraction span {
+  opacity: 0;
+}
+
+.insp-fraction.has-value span,
+.insp-fraction:focus-within span {
+  opacity: 1;
+}
+
+.insp-fraction input {
+  min-width: 0;
+  width: 46%;
+  max-width: 46%;
+}
+
+.insp-fill-btn {
+  background: #fff4ee;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.insp-tip {
+  position: relative;
+}
+
+.insp-tip-btn {
+  background: #fff8e1;
+  border-color: #f0b429;
+  color: #9a3412;
+}
+
+.insp-tip-btn:hover,
+.insp-tip-btn.is-on {
+  background: #ffe8b3;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.insp-tip-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 24;
+  width: min(300px, calc(100vw - 32px));
+  padding: 12px 14px 10px;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  background: #fffdf6;
+  box-shadow: 0 12px 28px rgba(26, 26, 26, 0.14);
+  text-align: left;
+}
+
+.insp-tip-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.insp-tip-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.insp-tip-panel li {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #333;
+}
+
+.insp-tip-ok { color: var(--ok); }
+.insp-tip-bad { color: var(--warn); }
+.insp-tip-off { color: #4a5d73; }
+.insp-tip-num { color: #c62828; }
+
+.insp-print-only {
+  display: none !important;
+}
+
+.insp-sheet tr.is-dragging {
+  opacity: 0.4;
+}
+
+@media screen and (max-width: 960px) {
+  .insp-paper {
+    overflow-x: auto;
+  }
+
+  .insp-sheet {
+    min-width: 920px;
+  }
+}
+
+.insp-sheet-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px dashed var(--accent);
+  background: #fff8f4;
+  border-radius: 4px;
+  padding: 3px 4px;
+  font: inherit;
+  text-align: center;
+  position: relative;
+  z-index: 0;
+}
+
+.insp-status-row td,
+.insp-sheet .insp-status-row .day-col,
+.insp-sheet .insp-status-row .day-col.is-today,
+.insp-sheet .insp-status-row .day-col.is-active {
+  background: #fff7b0;
+  font-weight: 700;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.insp-status-label {
+  text-align: left;
+  padding-left: 8px;
+}
+
+.insp-foot-head th {
+  background: #faf9f7;
+  font-size: var(--form-text);
+}
+
+.insp-foot-head th:first-child,
+.insp-foot-body td:first-child,
+.insp-foot-date-col {
+  width: 8%;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.insp-foot-body td {
+  height: 44px;
+}
+
+.insp-foot-body textarea,
+.insp-foot-body input[type='date'],
+.insp-foot-date {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  resize: none;
+  box-sizing: border-box;
+}
+
+.insp-foot-date {
+  min-height: 28px;
+  font-size: var(--form-text);
+  padding: 0;
+}
+
+.insp-foot-empty td {
+  text-align: center;
+  color: #333;
+  font-weight: 600;
+}
+
+.insp-name-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.insp-name-edit input {
+  border: 1px dashed var(--accent);
+  background: #fff8f4;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 16px;
+  font-weight: 700;
+  min-width: 140px;
+}
+
+.insp-cell-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px dashed var(--accent);
+  background: #fff8f4;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  text-align: center;
+}
+
+.insp-drag-handle {
+  display: grid;
+  place-items: center;
+  color: #888;
+  cursor: grab;
+}
+
+.month-grid tr.is-dragging {
+  opacity: 0.4;
+}
+
+.insp-row-del {
+  position: static;
+  width: 22px;
+  height: 22px;
+  box-shadow: none;
+}
+
+.month-grid .col-edit {
+  width: 44px;
+  min-width: 44px;
+}
+
+.month-grid .col-kind {
+  width: 92px;
+  min-width: 92px;
+}
+
 .chem-paper {
   display: flex;
   flex-direction: column;
@@ -1702,10 +2767,45 @@ a {
   padding: 6mm;
   overflow: hidden;
   overflow-anchor: none;
-  width: min(297mm, 100%);
-  height: 210mm;
-  max-height: 210mm;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
+}
+
+.chem-all-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.chem-all-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  gap: 16px;
+  padding: 0 0 12px;
+}
+
+.chem-stack-paper {
+  flex: 0 0 auto;
+  min-height: 198mm;
+  overflow: visible;
+}
+
+.chem-all-stack .chem-sheet {
+  min-height: 198mm;
+}
+
+.chem-all-stack .chem-sheet,
+.chem-all-stack .chem-frame,
+.chem-all-stack .chem-table-wrap {
+  overflow: visible;
+  height: auto;
 }
 
 .chem-sheet-tools {
@@ -1714,12 +2814,21 @@ a {
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
-  width: min(297mm, 100%);
+  width: 100%;
   margin: 0 0 8px;
   flex-shrink: 0;
 }
 
+.chem-sheet-tool-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .chem-sheet {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -1728,11 +2837,81 @@ a {
   color: #111;
 }
 
+.chem-page-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.chem-page-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed var(--accent);
+}
+
+.chem-page-guide span {
+  position: absolute;
+  right: 0;
+  top: -28px;
+  padding: 5px 12px;
+  border-radius: 999px 999px 0 0;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+
+.chem-page-guide.is-first {
+  border-top: 0;
+}
+
+.chem-page-guide.is-first span {
+  top: 10px;
+  border-radius: 999px;
+}
+
 .chem-legal {
   flex-shrink: 0;
   margin: 0 0 2px;
-  font-size: 12px;
+  font-size: var(--form-text);
   color: #666;
+}
+
+.chem-chrome-input {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  padding: 0 2px;
+  min-width: 2ch;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.chem-chrome-input.is-wide {
+  width: 100%;
+}
+
+body.chem-form-edit .chem-chrome-input {
+  border: 1px dashed var(--accent);
+  background: #fff8f4;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.chem-title-row .chem-chrome-input {
+  text-align: center;
+  font-weight: 700;
+}
+
+.chem-paper-size .chem-chrome-input {
+  text-align: right;
 }
 
 .chem-doc-btn {
@@ -1753,6 +2932,19 @@ a {
   background: #fff4ee;
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.chem-doc-btn.chem-doc-commit {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  animation: chem-save-pulse 1.6s ease-in-out infinite;
+}
+
+.chem-doc-btn.chem-doc-commit:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .chem-doc-btn.chem-doc-icon {
@@ -1800,7 +2992,8 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chem-doc-btn.chem-doc-save.is-dirty {
+  .chem-doc-btn.chem-doc-save.is-dirty,
+  .chem-doc-btn.chem-doc-commit {
     animation: none;
   }
 }
@@ -1857,6 +3050,8 @@ a {
   border: 0;
   border-bottom: 1px solid #111;
   padding: 3px 6px;
+  font-size: var(--form-text);
+  font-weight: 700;
 }
 
 .chem-align-grid {
@@ -1867,8 +3062,8 @@ a {
 }
 
 .chem-class-label {
-  font-size: 10px;
-  font-weight: 700;
+  font-size: inherit;
+  font-weight: inherit;
   line-height: 1.35;
   white-space: nowrap;
 }
@@ -1888,8 +3083,8 @@ a {
   align-items: baseline;
   gap: 2px;
   min-width: 0;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: inherit;
+  font-weight: inherit;
   white-space: nowrap;
 }
 
@@ -1927,8 +3122,8 @@ a {
   width: max-content;
   max-width: 100%;
   gap: 0;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: inherit;
+  font-weight: inherit;
   white-space: nowrap;
 }
 
@@ -1972,7 +3167,8 @@ a {
   background: transparent;
   padding: 2px 4px;
   min-width: 0;
-  font-size: 9px;
+  font-size: inherit;
+  font-weight: inherit;
 }
 
 .chem-table input,
@@ -1980,13 +3176,18 @@ a {
   border: 0;
   border-bottom: none;
   background: transparent;
-  font-size: 9px;
+  font-size: calc(9px + var(--type-up));
+}
+
+.chem-table tbody input,
+.chem-table tbody textarea {
+  font-size: var(--form-entry);
 }
 
 .chem-table-wrap {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   overflow-anchor: none;
 }
 
@@ -2008,7 +3209,8 @@ a {
 
 .chem-table {
   width: 100%;
-  height: 100%;
+  height: auto;
+  min-height: 100%;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -2022,7 +3224,7 @@ a {
 .chem-table td {
   border: 1px solid #222;
   padding: 1px;
-  font-size: 9px;
+  font-size: calc(9px + var(--type-up));
   vertical-align: middle;
   text-align: center;
   align-content: center;
@@ -2031,6 +3233,10 @@ a {
   white-space: normal;
   overflow-wrap: break-word;
   word-break: keep-all;
+}
+
+.chem-table tbody td {
+  font-size: var(--form-entry);
 }
 
 .chem-table thead th.chem-th-biz {
@@ -2123,6 +3329,12 @@ a {
   word-break: keep-all;
 }
 
+.chem-table tbody textarea.chem-wrap {
+  height: auto;
+  max-height: none;
+  field-sizing: content;
+}
+
 .chem-table textarea.chem-wrap-digit {
   overflow-wrap: anywhere;
   word-break: break-all;
@@ -2154,7 +3366,7 @@ a {
 
 .chem-qty em {
   font-style: normal;
-  font-size: 9px;
+  font-size: var(--form-entry);
   flex-shrink: 0;
   pointer-events: none;
 }
@@ -2194,7 +3406,7 @@ a {
 }
 
 .chem-paper-size {
-  font-size: 11px;
+  font-size: var(--form-text);
   color: #666;
   text-align: right;
 }
@@ -2205,14 +3417,15 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 0 0 8px;
+  margin: 0;
   padding: 8px 10px;
   border: 1px dashed var(--accent);
   border-radius: 10px;
   background: #fff8f4;
   font-size: 12px;
-  width: min(297mm, 100%);
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
 }
 
 .chem-form-tools {
@@ -2267,12 +3480,11 @@ a {
   vertical-align: top;
 }
 
-.chem-table.is-editing tbody tr.is-row-locked td textarea.chem-wrap,
-.chem-table.is-editing tbody tr.is-row-locked td input {
-  field-sizing: fixed;
-  height: 100%;
-  min-height: 0;
-  max-height: 100%;
+.chem-table.is-editing tbody td textarea.chem-wrap,
+.chem-table.is-editing tbody td input {
+  field-sizing: content;
+  height: auto;
+  max-height: none;
 }
 
 .chem-table.is-editing thead tr.is-row-locked th .chem-th-input {
@@ -2441,6 +3653,32 @@ a {
   border-color: #f3c4c4;
 }
 
+body.insp-printing .insp-sheet .day-col.is-today,
+body.insp-printing .insp-sheet .day-col.is-active {
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+body.insp-printing .insp-sheet .insp-status-row .day-col,
+body.insp-printing .insp-sheet .insp-status-row .day-col.is-today,
+body.insp-printing .insp-sheet .insp-status-row .day-col.is-active {
+  background: #fff7b0 !important;
+}
+
+body.insp-printing .insp-sheet .insp-cols .day-col.is-today button,
+body.insp-printing .insp-sheet .insp-cols .day-col.is-active button {
+  color: inherit !important;
+}
+
+body.insp-printing .chem-col-handle,
+body.insp-printing .chem-row-handle {
+  display: none !important;
+}
+
+body.insp-printing .insp-unit-hint {
+  display: none !important;
+}
+
 body.chem-resizing {
   user-select: none;
 }
@@ -2475,7 +3713,16 @@ body.chem-resizing-row * {
   .body,
   .main,
   .chem-page,
-  .chem-paper {
+  .insp-page,
+  .chem-paper,
+  .chem-sheet,
+  .chem-frame,
+  .chem-table-wrap,
+  .chem-all-wrap,
+  .chem-all-stack,
+  .insp-all-wrap,
+  .insp-all-stack,
+  .insp-stack-paper {
     background: #fff !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -2485,19 +3732,260 @@ body.chem-resizing-row * {
     min-height: 0 !important;
     overflow: visible !important;
     box-shadow: none !important;
+    flex: none !important;
+  }
+
+  .chem-page,
+  .insp-page,
+  .chem-paper,
+  .chem-sheet,
+  .chem-frame,
+  .chem-table-wrap,
+  .chem-all-wrap,
+  .chem-all-stack,
+  .insp-all-wrap,
+  .insp-all-stack,
+  .insp-stack-paper {
+    display: block !important;
+  }
+
+  .chem-stack-paper + .chem-stack-paper,
+  .insp-stack-paper + .insp-stack-paper {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .insp-page,
+  .insp-all-wrap,
+  .insp-all-stack,
+  .insp-stack-paper,
+  .insp-paper,
+  .insp-sheet {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .insp-paper {
+    border: 1px solid #111 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  .insp-sheet {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+    font-size: 10px !important;
+  }
+
+  .insp-sheet col.col-equip { width: 8% !important; }
+  .insp-sheet col.col-no { width: 3% !important; }
+  .insp-sheet col.col-point { width: 8% !important; }
+  .insp-sheet col.col-timing { width: 3% !important; }
+  .insp-sheet col.col-criteria { width: 12% !important; }
+  .insp-sheet col.col-day { width: 2.12% !important; }
+
+  .insp-sheet th,
+  .insp-sheet td,
+  .insp-sheet .day-col {
+    min-width: 0 !important;
+    max-width: none !important;
+    overflow: hidden !important;
+  }
+
+  .insp-sheet tbody td,
+  .insp-sheet tbody th {
+    height: auto !important;
+    padding: 1px 2px !important;
+  }
+
+  .insp-sheet-title {
+    font-size: 15pt !important;
+  }
+
+  .insp-support {
+    font-size: 13pt !important;
+  }
+
+  .insp-stamp-sign img {
+    height: 22px !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .insp-sheet .day-col.is-today,
+  .insp-sheet .day-col.is-active,
+  body.insp-printing .insp-sheet .day-col.is-today,
+  body.insp-printing .insp-sheet .day-col.is-active {
+    background: #fff !important;
+    color: inherit !important;
+    box-shadow: none !important;
+    outline: none !important;
+    print-color-adjust: economy;
+    -webkit-print-color-adjust: economy;
+  }
+
+  .insp-sheet .insp-cols .day-col.is-today button,
+  .insp-sheet .insp-cols .day-col.is-active button {
+    color: inherit !important;
+  }
+
+  .chem-col-handle,
+  .chem-row-handle,
+  .insp-sheet.is-form-edit .chem-col-handle,
+  .insp-sheet.is-form-edit .chem-row-handle {
+    display: none !important;
+    background: none !important;
+  }
+
+  .insp-sheet-input {
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .insp-inspector-select {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .insp-unit-hint {
+    display: none !important;
+  }
+
+  .insp-mark,
+  .insp-reading,
+  .insp-fraction input,
+  .insp-sheet .insp-cols .day-col button {
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    border: 0 !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+  }
+
+  .insp-status-row td,
+  .insp-sheet .insp-status-row .day-col,
+  .insp-sheet .insp-status-row .day-col.is-today,
+  .insp-sheet .insp-status-row .day-col.is-active,
+  body.insp-printing .insp-status-row td,
+  body.insp-printing .insp-sheet .insp-status-row .day-col {
+    background: #fff7b0 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .insp-mark,
+  .insp-reading,
+  .insp-fraction input,
+  .insp-sheet button {
+    min-width: 0 !important;
+    min-height: 0 !important;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .insp-print-only {
+    display: table-row !important;
+  }
+
+  .chem-paper,
+  .chem-sheet {
     border: 0 !important;
   }
 
-  .chem-sheet {
-    width: 100%;
-    height: 198mm;
-    max-width: none;
-    margin: 0;
-    overflow: hidden;
+  .chem-frame {
+    border: 2.5px solid #111;
+  }
+
+  .chem-table {
+    height: auto !important;
+  }
+
+  .chem-table thead {
+    display: table-header-group;
+  }
+
+  .chem-title-row,
+  .chem-meta {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .chem-table tbody tr {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .chem-table tbody tr,
+  .chem-table tbody td {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .chem-table th,
+  .chem-table td {
+    overflow: visible !important;
+  }
+
+  .chem-table tbody td textarea.chem-wrap,
+  .chem-table tbody td input,
+  .chem-table .chem-qty,
+  .chem-table .chem-qty textarea.chem-wrap {
+    max-height: none !important;
+    min-height: 100%;
+    overflow: hidden !important;
+    field-sizing: content;
+    resize: none !important;
+    scrollbar-width: none !important;
+  }
+
+  .chem-table .chem-qty textarea.chem-wrap {
+    field-sizing: fixed !important;
+    min-height: 0 !important;
+  }
+
+  .chem-qty.empty-qty em {
+    display: none !important;
+  }
+
+  input[type='number'],
+  .insp-reading,
+  .insp-sheet-input {
+    appearance: textfield !important;
+    -moz-appearance: textfield !important;
+  }
+
+  input::-webkit-outer-spin-button,
+  input::-webkit-inner-spin-button,
+  textarea::-webkit-scrollbar,
+  input::-webkit-scrollbar {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+  }
+
+  .chem-frame .chem-table tbody tr:last-child > * {
+    border-bottom: 1px solid #222;
   }
 
   .chem-meta input {
     border-bottom: none !important;
+  }
+
+  .chem-chrome-input {
+    border: 0 !important;
+    background: transparent !important;
+    padding: 0 2px !important;
   }
 }
 

@@ -5,12 +5,13 @@ import type { ChemicalLedgerRow } from '../types'
 import {
   HEADER_ROW_IDS,
   isBizNoHeader,
+  isDateColumn,
   type ChemFormColumn,
   type HeaderChunk,
   type HeaderRowId,
   groupHeaderChunks,
 } from '../lib/chemFormLayout'
-import { QtyField, WrapField } from './ChemLedgerFields'
+import { DateField, QtyField, WrapField } from './ChemLedgerFields'
 
 function cx(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(' ') || undefined
@@ -182,6 +183,7 @@ function SectionHeads({
   onRowResizeStart,
   onInsertCol,
   onDeleteCol,
+  onRenameTitle,
 }: {
   title: string
   cols: ChemFormColumn[]
@@ -193,6 +195,7 @@ function SectionHeads({
   onRowResizeStart: (rowId: string, event: MouseEvent<HTMLButtonElement>) => void
   onInsertCol: (afterId: string) => void
   onDeleteCol: (id: string) => void
+  onRenameTitle: (value: string) => void
 }) {
   if (cols.length === 0) return null
   const last = cols[cols.length - 1]
@@ -204,7 +207,15 @@ function SectionHeads({
       style={style}
       onClick={pick.onClick}
     >
-      {title}
+      {formEdit ? (
+        <HeaderNameInput
+          value={title}
+          locked={Boolean(pick.className)}
+          onChange={onRenameTitle}
+        />
+      ) : (
+        <HeaderLines text={title} />
+      )}
       <HeaderColTools
         formEdit={formEdit}
         formAction={formAction}
@@ -231,6 +242,7 @@ function BlockRow({
   onInsertCol,
   onDeleteCol,
   onRename,
+  onRenameBlock,
 }: {
   chunks: HeaderChunk[]
   formEdit: boolean
@@ -244,6 +256,7 @@ function BlockRow({
   onInsertCol: (afterId: string) => void
   onDeleteCol: (id: string) => void
   onRename: (id: string, label: string) => void
+  onRenameBlock: (id: string, block: string) => void
 }) {
   return (
     <>
@@ -285,13 +298,23 @@ function BlockRow({
         const pick = last ? pickColProps(formAction, last.id, onInsertCol, onDeleteCol) : {}
         return (
           <th
-            key={chunk.block}
+            key={chunk.cols[0]?.id ?? chunk.block}
             colSpan={chunk.cols.length}
             className={cx(formEdit && 'chem-th-edit', pick.className)}
             style={bandStyle}
             onClick={pick.onClick}
           >
-            <HeaderLines text={chunk.block ?? ''} />
+            {formEdit ? (
+              <HeaderNameInput
+                value={chunk.block ?? ''}
+                locked={Boolean(pick.className)}
+                onChange={(value) => {
+                  if (last) onRenameBlock(last.id, value)
+                }}
+              />
+            ) : (
+              <HeaderLines text={chunk.block ?? ''} />
+            )}
             {last ? (
               <HeaderColTools
                 formEdit={formEdit}
@@ -385,6 +408,7 @@ interface ChemLedgerTableProps {
   colPx: Record<string, number>
   rows: ChemicalLedgerRow[]
   unit: string
+  year: number
   formEdit: boolean
   formAction: ChemFormAction
   rowHeights: Record<string, number>
@@ -396,6 +420,10 @@ interface ChemLedgerTableProps {
   onRowResizeStart: (rowId: string, event: MouseEvent<HTMLButtonElement>) => void
   onDeleteCol: (id: string) => void
   onRename: (id: string, label: string) => void
+  onRenameBlock: (id: string, block: string) => void
+  inSection: string
+  outSection: string
+  onRenameSection: (group: 'in' | 'out', title: string) => void
   flashColId?: string | null
   flashRowId?: string | null
   fillRowHeight?: number | null
@@ -406,6 +434,7 @@ export function ChemLedgerTable({
   colPx,
   rows,
   unit,
+  year,
   formEdit,
   formAction,
   rowHeights,
@@ -417,6 +446,10 @@ export function ChemLedgerTable({
   onRowResizeStart,
   onDeleteCol,
   onRename,
+  onRenameBlock,
+  inSection,
+  outSection,
+  onRenameSection,
   flashColId,
   flashRowId,
   fillRowHeight,
@@ -488,7 +521,7 @@ export function ChemLedgerTable({
             </th>
           ) : null}
           <SectionHeads
-            title="입 고 량"
+            title={inSection}
             cols={inCols}
             formEdit={formEdit}
             formAction={formAction}
@@ -498,9 +531,10 @@ export function ChemLedgerTable({
             onRowResizeStart={onRowResizeStart}
             onInsertCol={onInsertCol}
             onDeleteCol={onDeleteCol}
+            onRenameTitle={(value) => onRenameSection('in', value)}
           />
           <SectionHeads
-            title="출 고 량"
+            title={outSection}
             cols={outCols}
             formEdit={formEdit}
             formAction={formAction}
@@ -510,6 +544,7 @@ export function ChemLedgerTable({
             onRowResizeStart={onRowResizeStart}
             onInsertCol={onInsertCol}
             onDeleteCol={onDeleteCol}
+            onRenameTitle={(value) => onRenameSection('out', value)}
           />
           {endCols.map((col) => {
             const pick = pickColProps(formAction, col.id, onInsertCol, onDeleteCol)
@@ -562,6 +597,7 @@ export function ChemLedgerTable({
             onInsertCol={onInsertCol}
             onDeleteCol={onDeleteCol}
             onRename={onRename}
+            onRenameBlock={onRenameBlock}
           />
           <BlockRow
             chunks={outChunks}
@@ -576,6 +612,7 @@ export function ChemLedgerTable({
             onInsertCol={onInsertCol}
             onDeleteCol={onDeleteCol}
             onRename={onRename}
+            onRenameBlock={onRenameBlock}
           />
         </tr>
         <tr
@@ -614,14 +651,12 @@ export function ChemLedgerTable({
       <tbody>
         {rows.map((row) => {
           const rowH = rowHeights[row.id] ?? fillRowHeight ?? undefined
-          const cellStyle = rowH
-            ? { height: rowH, minHeight: rowH, maxHeight: rowH }
-            : undefined
+          const cellStyle = rowH ? { minHeight: rowH } : undefined
           return (
             <tr
               key={row.id}
               data-row-id={row.id}
-              className={cx(Boolean(rowH) && 'is-row-locked', flashRowId === row.id && 'is-flash')}
+              className={flashRowId === row.id ? 'is-flash' : undefined}
               style={cellStyle}
             >
               {showRowTools ? (
@@ -665,6 +700,13 @@ export function ChemLedgerTable({
                       lockSize
                       onChange={(value) => onUpdateCell(row.id, col, value)}
                     />
+                  ) : isDateColumn(col) ? (
+                    <DateField
+                      value={cellValue(row, col)}
+                      year={year}
+                      lockSize
+                      onChange={(value) => onUpdateCell(row.id, col, value)}
+                    />
                   ) : (
                     <WrapField
                       variant={col.kind === 'digit' ? 'digit' : 'keep'}
@@ -687,9 +729,11 @@ export function ChemLedgerTable({
 export function ChemFormEditBar({
   action,
   onAction,
+  layoutOnly = false,
 }: {
   action: ChemFormAction
   onAction: (next: ChemFormAction) => void
+  layoutOnly?: boolean
 }) {
   const toggle = (next: Exclude<ChemFormAction, null>) => {
     onAction(action === next ? null : next)
@@ -699,11 +743,13 @@ export function ChemFormEditBar({
       ? '헤더 칸을 눌러 그 옆에 열을 추가하세요.'
       : action === 'col-del'
         ? '삭제할 열의 헤더 칸을 누르세요.'
-          : action === 'row-add'
+        : action === 'row-add'
           ? '왼쪽 + 를 눌러 그 아래에 행을 추가하세요.'
           : action === 'row-del'
             ? '왼쪽 − 를 눌러 해당 행을 삭제하세요.'
-            : '열 경계를 끌어 너비를, 행 아래쪽을 끌어 높이를 바꿀 수 있습니다.'
+            : layoutOnly
+              ? '열·행·머리글을 수정하면 모든 물질 양식에 적용됩니다.'
+              : '이 물질의 양식만 수정됩니다. 각 행과 열을 드래그하여 수정하거나 추가할 수 있습니다.'
 
   return (
     <div className="chem-form-bar no-print">

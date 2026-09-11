@@ -14,24 +14,81 @@ export interface ChemFormColumn {
 }
 
 const KEY = 'chemFormLayout'
+const KEY_BY_ID = 'chemFormLayoutById'
 const HEADER_ROW_KEY = 'chemFormHeaderRows'
+const HEADER_ROW_KEY_BY_ID = 'chemFormHeaderRowsById'
+const CHROME_KEY_BY_ID = 'chemSheetChromeById'
+
+export interface ChemSheetChrome {
+  legal: string
+  titleBefore: string
+  titleAfter: string
+  footer: string
+  inSection: string
+  outSection: string
+}
+
+export const DEFAULT_CHEM_CHROME: ChemSheetChrome = {
+  legal: '¾ 화학물질관리법 시행규칙 [별지 제75호 서식]',
+  titleBefore: '화학물질',
+  titleAfter: '관리대장',
+  footer: '297mm × 210mm [백상지 80g/m²]',
+  inSection: '입 고 량',
+  outSection: '출 고 량',
+}
+
+function defaultChrome(): ChemSheetChrome {
+  return { ...DEFAULT_CHEM_CHROME }
+}
+
+function normalizeChrome(saved: Partial<ChemSheetChrome> | null | undefined): ChemSheetChrome {
+  return {
+    legal: typeof saved?.legal === 'string' ? saved.legal : DEFAULT_CHEM_CHROME.legal,
+    titleBefore: typeof saved?.titleBefore === 'string' ? saved.titleBefore : DEFAULT_CHEM_CHROME.titleBefore,
+    titleAfter: typeof saved?.titleAfter === 'string' ? saved.titleAfter : DEFAULT_CHEM_CHROME.titleAfter,
+    footer: typeof saved?.footer === 'string' ? saved.footer : DEFAULT_CHEM_CHROME.footer,
+    inSection: typeof saved?.inSection === 'string' ? saved.inSection : DEFAULT_CHEM_CHROME.inSection,
+    outSection: typeof saved?.outSection === 'string' ? saved.outSection : DEFAULT_CHEM_CHROME.outSection,
+  }
+}
+
+export function loadChemSheetChrome(ledgerId = ''): ChemSheetChrome {
+  if (!ledgerId) return defaultChrome()
+  const byId = readJson<Record<string, Partial<ChemSheetChrome>>>(CHROME_KEY_BY_ID, {})
+  return normalizeChrome(byId[ledgerId])
+}
+
+export function saveChemSheetChrome(chrome: ChemSheetChrome, ledgerId = ''): ChemSheetChrome {
+  const next = normalizeChrome(chrome)
+  if (!ledgerId) return next
+  const byId = readJson<Record<string, ChemSheetChrome>>(CHROME_KEY_BY_ID, {})
+  writeJson(CHROME_KEY_BY_ID, { ...byId, [ledgerId]: next })
+  return next
+}
 
 export const HEADER_ROW_IDS = ['thead-section', 'thead-block', 'thead-leaf'] as const
 export type HeaderRowId = (typeof HEADER_ROW_IDS)[number]
 
-export function loadHeaderRowHeights(): Record<string, number> {
-  const saved = readJson<Record<string, number> | null>(HEADER_ROW_KEY, null)
+function sanitizeHeaderHeights(saved: Record<string, number> | null): Record<string, number> {
   if (!saved) return {}
   return Object.fromEntries(
-    HEADER_ROW_IDS.filter((id) => Number.isFinite(saved[id]) && saved[id] >= 18).map((id) => [id, saved[id]]),
+    Object.entries(saved).filter(([, height]) => Number.isFinite(height) && height >= 18),
   )
 }
 
-export function saveHeaderRowHeights(heights: Record<string, number>): void {
-  writeJson(
-    HEADER_ROW_KEY,
-    Object.fromEntries(HEADER_ROW_IDS.filter((id) => Number.isFinite(heights[id])).map((id) => [id, heights[id]])),
-  )
+export function loadHeaderRowHeights(ledgerId = ''): Record<string, number> {
+  if (ledgerId) {
+    const byId = readJson<Record<string, Record<string, number>>>(HEADER_ROW_KEY_BY_ID, {})
+    if (byId[ledgerId]) return sanitizeHeaderHeights(byId[ledgerId])
+  }
+  return {}
+}
+
+export function saveHeaderRowHeights(heights: Record<string, number>, ledgerId = ''): void {
+  const next = sanitizeHeaderHeights(heights)
+  if (!ledgerId) return
+  const byId = readJson<Record<string, Record<string, number>>>(HEADER_ROW_KEY_BY_ID, {})
+  writeJson(HEADER_ROW_KEY_BY_ID, { ...byId, [ledgerId]: next })
 }
 
 export const DEFAULT_CHEM_COLUMNS: ChemFormColumn[] = [
@@ -99,6 +156,16 @@ export function isBizNoHeader(col: ChemFormColumn): boolean {
   return col.id === 'inBizNo' || col.id === 'outBizNo' || col.label.includes('사업자등록번호')
 }
 
+export function isDateColumn(col: ChemFormColumn): boolean {
+  return (
+    col.id === 'inDate' ||
+    col.id === 'outDate' ||
+    col.key === 'inDate' ||
+    col.key === 'outDate' ||
+    col.label.replace(/\s/g, '') === '연월일'
+  )
+}
+
 export function normalizeColumns(list: ChemFormColumn[]): ChemFormColumn[] {
   const next = list.map((item, index) => withBizNoLineBreak(normalizeColumn(item, index)))
   const columns = next.length > 0 ? next : DEFAULT_CHEM_COLUMNS.map((item) => ({ ...item }))
@@ -117,21 +184,88 @@ export function normalizeColumns(list: ChemFormColumn[]): ChemFormColumn[] {
   return columns
 }
 
-export function loadChemFormColumns(): ChemFormColumn[] {
+function defaultColumns(): ChemFormColumn[] {
+  return DEFAULT_CHEM_COLUMNS.map((item) => ({ ...item }))
+}
+
+function columnsById(): Record<string, ChemFormColumn[]> {
+  return readJson<Record<string, ChemFormColumn[]>>(KEY_BY_ID, {})
+}
+
+export function migrateChemFormLayout(ledgerIds: string[]): void {
+  const byId = columnsById()
+  if (ledgerIds.some((id) => byId[id] && byId[id].length > 0)) return
   const saved = readJson<ChemFormColumn[] | null>(KEY, null)
-  if (!saved || saved.length === 0) return DEFAULT_CHEM_COLUMNS.map((item) => ({ ...item }))
+  if (!saved || saved.length === 0 || ledgerIds.length === 0) return
   const normalized = normalizeColumns(saved)
-  const savedStock = saved.findIndex((col) => col.id === 'stock' || col.key === 'stock')
-  const savedNote = saved.findIndex((col) => col.id === 'note' || col.key === 'note')
-  const bizRelabeled = saved.some((col, index) => col.label !== normalized[index]?.label)
-  if (savedStock < 0 || (savedNote >= 0 && savedStock > savedNote) || bizRelabeled) writeJson(KEY, normalized)
+  const next: Record<string, ChemFormColumn[]> = { ...byId }
+  for (const id of ledgerIds) next[id] = normalized
+  writeJson(KEY_BY_ID, next)
+
+  const heightsById = readJson<Record<string, Record<string, number>>>(HEADER_ROW_KEY_BY_ID, {})
+  if (ledgerIds.some((id) => heightsById[id])) return
+  const heights = sanitizeHeaderHeights(readJson<Record<string, number> | null>(HEADER_ROW_KEY, null))
+  if (Object.keys(heights).length === 0) return
+  const nextHeights: Record<string, Record<string, number>> = { ...heightsById }
+  for (const id of ledgerIds) nextHeights[id] = heights
+  writeJson(HEADER_ROW_KEY_BY_ID, nextHeights)
+}
+
+export function loadChemFormColumns(ledgerId = ''): ChemFormColumn[] {
+  if (ledgerId) {
+    const saved = columnsById()[ledgerId]
+    if (saved && saved.length > 0) return normalizeColumns(saved)
+  }
+  return defaultColumns()
+}
+
+export function saveChemFormColumns(list: ChemFormColumn[], ledgerId = ''): ChemFormColumn[] {
+  const normalized = normalizeColumns(list)
+  if (!ledgerId) return normalized
+  writeJson(KEY_BY_ID, { ...columnsById(), [ledgerId]: normalized })
   return normalized
 }
 
-export function saveChemFormColumns(list: ChemFormColumn[]): ChemFormColumn[] {
-  const normalized = normalizeColumns(list)
-  writeJson(KEY, normalized)
-  return normalized
+export function saveChemFormLayoutAll(
+  ledgerIds: string[],
+  columns: ChemFormColumn[],
+  chrome: ChemSheetChrome,
+  rowHeights: Record<string, number>,
+): void {
+  const normalized = normalizeColumns(columns)
+  const nextChrome = normalizeChrome(chrome)
+  const heights = sanitizeHeaderHeights(rowHeights)
+  const cols = { ...columnsById() }
+  const chromeById = readJson<Record<string, ChemSheetChrome>>(CHROME_KEY_BY_ID, {})
+  const heightsById = readJson<Record<string, Record<string, number>>>(HEADER_ROW_KEY_BY_ID, {})
+  for (const id of ledgerIds) {
+    if (!id || id === '__all__') continue
+    cols[id] = normalized
+    chromeById[id] = nextChrome
+    heightsById[id] = heights
+  }
+  writeJson(KEY_BY_ID, cols)
+  writeJson(CHROME_KEY_BY_ID, chromeById)
+  writeJson(HEADER_ROW_KEY_BY_ID, heightsById)
+}
+
+export function removeChemFormLayout(ledgerId: string): void {
+  if (!ledgerId) return
+  const byId = columnsById()
+  if (byId[ledgerId]) {
+    const { [ledgerId]: _removed, ...rest } = byId
+    writeJson(KEY_BY_ID, rest)
+  }
+  const heights = readJson<Record<string, Record<string, number>>>(HEADER_ROW_KEY_BY_ID, {})
+  if (heights[ledgerId]) {
+    const { [ledgerId]: _removed, ...rest } = heights
+    writeJson(HEADER_ROW_KEY_BY_ID, rest)
+  }
+  const chrome = readJson<Record<string, ChemSheetChrome>>(CHROME_KEY_BY_ID, {})
+  if (chrome[ledgerId]) {
+    const { [ledgerId]: _removed, ...rest } = chrome
+    writeJson(CHROME_KEY_BY_ID, rest)
+  }
 }
 
 export function createChemColumn(group: ChemColGroup, block?: string): ChemFormColumn {

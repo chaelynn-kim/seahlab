@@ -1,4 +1,4 @@
-export type CheckResult = 'O' | 'X' | ''
+export type CheckResult = 'O' | 'X' | '휴' | ''
 
 export type TimingCode = '운' | '정'
 
@@ -105,3 +105,5 @@ export interface ChemicalLedger {
   meta: ChemicalLedgerMeta
   rows: ChemicalLedgerRow[]
 }
+
+export type ChemicalLedgersByYear = Record<string, ChemicalLedger[]>

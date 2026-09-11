@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { History, RefreshCw, Trash2 } from 'lucide-react'
+import { PageHead } from '../components/layout/PageHead'
 import { ACTIVITY_ACTIONS } from '../lib/activity'
 import { formatDateTime } from '../lib/date'
 import { useAppData } from '../context/AppDataContext'
@@ -28,47 +29,45 @@ export function HistoryLogPage() {
 
   return (
     <section>
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">
-            <History size={24} />
-            이력 로그
-          </h1>
-          <p className="page-desc">
-            기능 이용 이력을 기록·조회합니다. (최근 300건 · 탭 이동 제외)
-          </p>
-        </div>
-      </div>
+      <PageHead
+        icon={History}
+        title="이력 로그"
+        description="기능 이용 이력을 기록·조회합니다. (최근 300건 · 탭 이동 제외)"
+      />
 
-      <div className="toolbar">
-        <select
-          className="select"
-          value={action}
-          onChange={(e) => setAction(e.target.value as '전체' | ActivityAction)}
-          aria-label="액션"
-        >
-          <option value="전체">액션: 전체</option>
-          {ACTIVITY_ACTIONS.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-        <label className="search">
+      <div className="log-filter">
+        <label className="log-filter-field">
+          <span>액션</span>
+          <select
+            className="log-filter-select"
+            value={action}
+            onChange={(event) => setAction(event.target.value as '전체' | ActivityAction)}
+          >
+            <option value="전체">전체</option>
+            {ACTIVITY_ACTIONS.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="log-filter-field log-filter-search">
           <span>사용자</span>
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="점검자 이름 검색"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="사용자 이메일 검색"
           />
         </label>
-        <button className="secondary-btn" type="button" onClick={refreshLogs}>
-          <RefreshCw size={16} />
-          새로고침
-        </button>
-        <span className="count-label">
-          표시 {filtered.length}건 / 전체 {logs.length}건
-        </span>
+        <div className="log-filter-aside">
+          <button className="secondary-btn" type="button" onClick={refreshLogs}>
+            <RefreshCw size={16} />
+            새로고침
+          </button>
+          <span className="count-label">
+            표시 {filtered.length}건 / 전체 {logs.length}건
+          </span>
+        </div>
       </div>
 
       <div className="log-table-wrap">

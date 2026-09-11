@@ -27,12 +27,13 @@ export function isInputKind(value: string | undefined): value is InputKind {
 export function inferInputKind(criteria: string): InputKind {
   if (fractionDenom(criteria) !== undefined) return 'fraction'
   if (
-    /(\d+(?:\.\d+)?|⅓|⅔)\s*(L|ℓ|psi|℃|°C|%|bar)/i.test(criteria) &&
+    /(\d+(?:\.\d+)?|⅓|⅔)\s*(L|ℓ|psi|℃|°C|%|bar|g)/i.test(criteria) &&
     /(유지|이내|이상|이하|확인|↑|↓)/.test(criteria)
   ) {
     return 'number'
   }
-  if (/\d+\s*(L|ℓ|psi)\s*(이상|이내|이하)/i.test(criteria)) return 'number'
+  if (/\d+\s*(L|ℓ|psi|g)\s*(이상|이내|이하)/i.test(criteria)) return 'number'
+  if (/\d+(?:\.\d+)?\s*mm/i.test(criteria)) return 'number'
   if (/\d+\s*~\s*\d+\s*\(?\s*bar/i.test(criteria)) return 'number'
   if (/\d+\s*[-~]\s*\d+\s*℃/.test(criteria)) return 'number'
   if (/발열\s*\d+\s*℃/i.test(criteria)) return 'number'
@@ -68,9 +69,25 @@ export function joinFraction(num: string, den: string): string {
   return `${num}/${den}`
 }
 
+export function readingUnit(item: CheckItem): string {
+  const attached = item.criteria.match(/(?:\d+(?:\.\d+)?|⅓|⅔)\s*(L|ℓ|psi|℃|°C|˚C|%|mm|g)/i)
+  if (attached?.[1]) return normalizeReadingUnit(attached[1])
+  if (/\(\s*bar\s*\)|\bbar\b/i.test(item.criteria)) return 'bar'
+  return ''
+}
+
+function normalizeReadingUnit(raw: string): string {
+  const unit = raw.trim()
+  if (/^(l|ℓ)$/i.test(unit)) return 'L'
+  if (/^(℃|°C|˚C)$/i.test(unit)) return '℃'
+  if (/^psi$/i.test(unit)) return 'psi'
+  if (/^mm$/i.test(unit)) return 'mm'
+  if (/^g$/i.test(unit)) return 'g'
+  return unit
+}
+
 export function readingPlaceholder(item: CheckItem): string {
-  const unit = item.criteria.match(/L|ℓ|psi|℃|°C|%|bar/i)
-  return unit ? unit[0] : '수치'
+  return readingUnit(item) || '수치'
 }
 
 export function sanitizeNumberInput(raw: string): string {
@@ -84,7 +101,25 @@ export function sanitizeDigits(raw: string): string {
   return raw.replace(/[^\d]/g, '')
 }
 
-const HIGHLIGHT_RE = /[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]|\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?/g
+export function sanitizeFractionDigit(raw: string): string {
+  return sanitizeDigits(raw).slice(-1)
+}
+
+const CRITERIA_HIGHLIGHT_NOS: Record<string, readonly number[]> = {
+  'q-fog': [1, 2, 4, 5, 6],
+  'pencil-hardness': [3],
+  tensile: [3, 4, 5],
+  arl: [1, 7],
+  oven: [3],
+  press: [2],
+}
+
+export function shouldHighlightCriteria(equipmentId: string, itemNo: number): boolean {
+  return CRITERIA_HIGHLIGHT_NOS[equipmentId]?.includes(itemNo) ?? false
+}
+
+const HIGHLIGHT_RE =
+  /[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]|\d+(?:\.\d+)?(?:\s*[~\-–]\s*\d+(?:\.\d+)?)?(?:\s*\/\s*\d+(?:\.\d+)?)?(?:\s*(?:L|ℓ|psi|℃|°C|˚C|%|bar|mm|g))?(?:\s*\(\s*bar\s*\))?(?:\s*[↓↑])?/gi
 
 export function splitCriteriaHighlight(criteria: string): { text: string; highlight: boolean }[] {
   let source = criteria

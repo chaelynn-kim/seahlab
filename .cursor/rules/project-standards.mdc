@@ -1,5 +1,5 @@
 ---
-description: 시험실 설비·기기 시스템 공통 개발 기준
+description: SeAH-Lab
 alwaysApply: true
 ---
 
@@ -22,5 +22,5 @@ alwaysApply: true
 
 ## UI
 
-- 시스템 명: 시험실 설비·기기 관리 시스템
-- 테마: 다크 사이드바/헤더, 번트 오렌지 액센트, 밝은 본문, 둥근 카드
+- 시스템 명: SeAH-Lab
+- 테마: 다크 헤더, 밝은 그레이 사이드바(#f4f3f1), 번트 오렌지 선택 메뉴, 밝은 본문, 둥근 카드

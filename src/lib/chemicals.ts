@@ -1,4 +1,4 @@
-import type { ChemicalLedger, ChemicalLedgerMeta, ChemicalLedgerRow } from '../types'
+import type { ChemicalLedger, ChemicalLedgerMeta, ChemicalLedgerRow, ChemicalLedgersByYear } from '../types'
 import { createId, readJson, writeJson } from './storage'
 
 const KEY = 'chemicalLedgers'
@@ -120,7 +120,24 @@ export function defaultChemicalLedgers(): ChemicalLedger[] {
 }
 
 export function createBlankLedger(): ChemicalLedger {
-  return createLedger(createId('chem'), '새 물질', '', '', '', '')
+  return {
+    id: createId('chem'),
+    tabName: '새 물질',
+    meta: {
+      productName: '',
+      mainUse: '',
+      activities: { manufacture: false, import: false, use: false, sale: false },
+      category1: '',
+      category2: '',
+      category3: '',
+      content: '',
+      content1: '',
+      content2: '',
+      content3: '',
+      unit: '',
+    },
+    rows: Array.from({ length: LEDGER_ROW_COUNT }, () => blankLedgerRow()),
+  }
 }
 
 function normalizeRow(row: Partial<ChemicalLedgerRow>): ChemicalLedgerRow {
@@ -188,33 +205,128 @@ export function normalizeLedgers(list: ChemicalLedger[]): ChemicalLedger[] {
   }))
 }
 
-export function loadChemicalLedgers(): ChemicalLedger[] {
-  const saved = readJson<ChemicalLedger[] | null>(KEY, null)
-  if (!saved || saved.length === 0) {
-    writeJson(INBOUND_SEED_KEY, true)
-    writeJson(ACCIDENT_CLASS_SEED_KEY, true)
-    return defaultChemicalLedgers()
+export function ledgerCalendarYear(): number {
+  return new Date().getFullYear()
+}
+
+function isYearBook(value: unknown): value is ChemicalLedgersByYear {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeYearBook(book: ChemicalLedgersByYear): ChemicalLedgersByYear {
+  const next: ChemicalLedgersByYear = {}
+  for (const [year, list] of Object.entries(book)) {
+    if (!/^\d{4}$/.test(year) || !Array.isArray(list)) continue
+    next[year] = normalizeLedgers(list)
   }
+  return next
+}
 
-  let next = normalizeLedgers(saved)
+export function blankLedgersForNewYear(source: ChemicalLedger[]): ChemicalLedger[] {
+  return normalizeLedgers(source).map((item) => ({
+    id: item.id,
+    tabName: item.tabName,
+    meta: item.meta,
+    rows: Array.from({ length: item.rows.length || LEDGER_ROW_COUNT }, () => blankLedgerRow()),
+  }))
+}
+
+export function ensureLedgerYear(book: ChemicalLedgersByYear, year: number): ChemicalLedgersByYear {
+  const key = String(year)
+  if (Object.prototype.hasOwnProperty.call(book, key)) return book
+  const previous = Object.keys(book)
+    .map(Number)
+    .filter((item) => Number.isFinite(item) && item < year)
+  const source = previous.length > 0 ? book[String(Math.max(...previous))] : defaultChemicalLedgers()
+  return { ...book, [key]: blankLedgersForNewYear(source ?? defaultChemicalLedgers()) }
+}
+
+export function listLedgerYears(book: ChemicalLedgersByYear): number[] {
+  const current = ledgerCalendarYear()
+  const stored = Object.keys(book)
+    .map(Number)
+    .filter((year) => Number.isFinite(year))
+  const start = stored.length > 0 ? Math.min(...stored, current) : current
+  const years: number[] = []
+  for (let year = start; year <= current; year += 1) years.push(year)
+  return years
+}
+
+function applyPendingSeeds(list: ChemicalLedger[]): { list: ChemicalLedger[]; changed: boolean } {
+  let next = list
   let changed = false
-
   if (!readJson<boolean>(INBOUND_SEED_KEY, false)) {
     next = seedEmptyInboundSupplier(next)
-    writeJson(INBOUND_SEED_KEY, true)
     changed = true
   }
   if (!readJson<boolean>(ACCIDENT_CLASS_SEED_KEY, false)) {
     next = applyToxicOnlyCategoryDefaults(next)
-    writeJson(ACCIDENT_CLASS_SEED_KEY, true)
     changed = true
   }
-  if (changed) writeJson(KEY, next)
-  return next
+  return { list: next, changed }
+}
+
+export function loadChemicalYearBook(): ChemicalLedgersByYear {
+  const current = ledgerCalendarYear()
+  const saved = readJson<unknown>(KEY, null)
+  let book: ChemicalLedgersByYear = {}
+  let changed = false
+
+  if (!saved || (Array.isArray(saved) && saved.length === 0)) {
+    writeJson(INBOUND_SEED_KEY, true)
+    writeJson(ACCIDENT_CLASS_SEED_KEY, true)
+    book = { [String(current)]: defaultChemicalLedgers() }
+    writeJson(KEY, book)
+    return book
+  }
+
+  if (Array.isArray(saved)) {
+    const legacyYear = current <= 2026 ? current : 2026
+    const seeded = applyPendingSeeds(normalizeLedgers(saved as ChemicalLedger[]))
+    writeJson(INBOUND_SEED_KEY, true)
+    writeJson(ACCIDENT_CLASS_SEED_KEY, true)
+    book = { [String(legacyYear)]: seeded.list }
+    changed = true
+  } else if (isYearBook(saved)) {
+    book = normalizeYearBook(saved)
+    const needsSeed =
+      !readJson<boolean>(INBOUND_SEED_KEY, false) || !readJson<boolean>(ACCIDENT_CLASS_SEED_KEY, false)
+    if (needsSeed) {
+      for (const year of Object.keys(book)) {
+        const seeded = applyPendingSeeds(book[year])
+        book[year] = seeded.list
+        if (seeded.changed) changed = true
+      }
+      writeJson(INBOUND_SEED_KEY, true)
+      writeJson(ACCIDENT_CLASS_SEED_KEY, true)
+    }
+  } else {
+    book = { [String(current)]: defaultChemicalLedgers() }
+    changed = true
+  }
+
+  const ensured = ensureLedgerYear(book, current)
+  if (ensured !== book) {
+    book = ensured
+    changed = true
+  }
+  if (changed) writeJson(KEY, book)
+  return book
+}
+
+export function saveChemicalYearBook(book: ChemicalLedgersByYear): ChemicalLedgersByYear {
+  const normalized = normalizeYearBook(book)
+  writeJson(KEY, normalized)
+  return normalized
+}
+
+export function loadChemicalLedgers(): ChemicalLedger[] {
+  const book = loadChemicalYearBook()
+  return book[String(ledgerCalendarYear())] ?? []
 }
 
 export function saveChemicalLedgers(list: ChemicalLedger[]): ChemicalLedger[] {
-  const normalized = normalizeLedgers(list)
-  writeJson(KEY, normalized)
-  return normalized
+  const current = String(ledgerCalendarYear())
+  const next = saveChemicalYearBook({ ...loadChemicalYearBook(), [current]: list })
+  return next[current] ?? normalizeLedgers(list)
 }

@@ -36,6 +36,36 @@ export function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate()
 }
 
+export function monthDayDigits(raw: string, year: number): string {
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return ''
+  const yearStr = String(year)
+  const yy = yearStr.slice(-2)
+  if (digits.length >= 8) return digits.slice(-4)
+  if (digits.length >= 6 && (digits.startsWith(yearStr) || digits.startsWith(yy))) return digits.slice(-4)
+  if (digits.startsWith(yearStr) && digits.length > 4) return digits.slice(yearStr.length).slice(0, 4)
+  if (digits.startsWith(yy) && digits.length > 2) return digits.slice(2, 6)
+  return digits.slice(0, 4)
+}
+
+export function formatLedgerDate(raw: string, year: number): string {
+  const md = monthDayDigits(raw, year)
+  if (md.length < 4) return ''
+  let month = Number(md.slice(0, 2))
+  let day = Number(md.slice(2, 4))
+  if (!Number.isFinite(month) || month < 1) month = 1
+  if (month > 12) month = 12
+  const maxDay = daysInMonth(year, month)
+  if (!Number.isFinite(day) || day < 1) day = 1
+  if (day > maxDay) day = maxDay
+  return `${pad2(year % 100)}-${pad2(month)}-${pad2(day)}`
+}
+
+export function ledgerDateMonthDay(value: string, year: number): string {
+  const formatted = formatLedgerDate(value, year)
+  return formatted.length === 8 ? formatted.slice(3) : ''
+}
+
 export function startWeekday(year: number, month: number): number {
   return new Date(year, month - 1, 1).getDay()
 }

@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -16,14 +17,15 @@ import {
   saveInspectors,
 } from '../lib/catalog'
 import {
+  inspectionContentKey,
   loadInspections,
   removeInspection,
   saveInspections,
   upsertInspection,
   type InspectionDraft,
 } from '../lib/inspections'
-import { loadChemicalLedgers, saveChemicalLedgers } from '../lib/chemicals'
-import type { ActivityLog, ChemicalLedger, Equipment, InspectionRecord } from '../types'
+import { ledgerCalendarYear, loadChemicalYearBook, saveChemicalYearBook } from '../lib/chemicals'
+import type { ActivityLog, ChemicalLedger, ChemicalLedgersByYear, Equipment, InspectionRecord } from '../types'
 
 interface AppDataContextValue {
   equipmentList: Equipment[]
@@ -31,9 +33,12 @@ interface AppDataContextValue {
   inspections: InspectionRecord[]
   logs: ActivityLog[]
   chemicalLedgers: ChemicalLedger[]
+  chemicalYearBook: ChemicalLedgersByYear
   saveCatalog: (equipment: Equipment[], inspectorNames: string[]) => void
   saveInspection: (draft: InspectionDraft, options?: { log?: boolean }) => InspectionRecord
+  saveInspectionsAll: (records: InspectionRecord[]) => void
   deleteInspection: (id: string) => void
+  saveChemicalYearBookAll: (book: ChemicalLedgersByYear) => void
   saveChemicalLedgersAll: (list: ChemicalLedger[]) => void
   deleteLog: (id: string) => void
   refreshLogs: () => void
@@ -48,7 +53,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const inspectionsRef = useRef(inspections)
   inspectionsRef.current = inspections
   const [logs, setLogs] = useState<ActivityLog[]>(() => loadActivityLogs())
-  const [chemicalLedgers, setChemicalLedgers] = useState<ChemicalLedger[]>(() => loadChemicalLedgers())
+  const [chemicalYearBook, setChemicalYearBook] = useState<ChemicalLedgersByYear>(() => loadChemicalYearBook())
+  const chemicalLedgers = chemicalYearBook[String(ledgerCalendarYear())] ?? []
+
+  useEffect(() => {
+    setEquipmentList(loadEquipmentCatalog())
+  }, [])
 
   const refreshLogs = useCallback(() => {
     setLogs(loadActivityLogs())
@@ -95,6 +105,44 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [findEquipment, refreshLogs],
   )
 
+  const saveInspectionsAll = useCallback(
+    (records: InspectionRecord[]) => {
+      const prev = inspectionsRef.current
+      const prevById = new Map(prev.map((item) => [item.id, item]))
+      const nextById = new Set(records.map((item) => item.id))
+
+      inspectionsRef.current = records
+      saveInspections(records)
+      setInspections(records)
+
+      let logged = false
+      for (const record of records) {
+        const old = prevById.get(record.id)
+        const equipment = findEquipment(record.equipmentId)
+        const label = `${equipment?.name ?? record.equipmentId} · ${record.date}`
+        if (!old) {
+          appendActivityLog(record.inspector, '일상 점검 작성', label)
+          logged = true
+        } else if (inspectionContentKey(old) !== inspectionContentKey(record)) {
+          appendActivityLog(record.inspector, '일상 점검 수정', label)
+          logged = true
+        }
+      }
+      for (const old of prev) {
+        if (nextById.has(old.id)) continue
+        const equipment = findEquipment(old.equipmentId)
+        appendActivityLog(
+          old.inspector,
+          '점검 기록 삭제',
+          `${equipment?.name ?? old.equipmentId} · ${old.date}`,
+        )
+        logged = true
+      }
+      if (logged) refreshLogs()
+    },
+    [findEquipment, refreshLogs],
+  )
+
   const deleteInspection = useCallback(
     (id: string) => {
       const target = inspectionsRef.current.find((item) => item.id === id)
@@ -115,14 +163,25 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [findEquipment, refreshLogs],
   )
 
-  const saveChemicalLedgersAll = useCallback(
-    (list: ChemicalLedger[]) => {
-      const next = saveChemicalLedgers(list)
-      setChemicalLedgers(next)
-      appendActivityLog(DEFAULT_ACTOR, '화학물질 대장 저장', `물질 ${next.length}종`)
+  const saveChemicalYearBookAll = useCallback(
+    (book: ChemicalLedgersByYear) => {
+      const next = saveChemicalYearBook(book)
+      setChemicalYearBook(next)
+      const years = Object.keys(next)
+        .sort()
+        .map((year) => `${year}년`)
+        .join(', ')
+      appendActivityLog(DEFAULT_ACTOR, '화학물질 대장 저장', years)
       refreshLogs()
     },
     [refreshLogs],
+  )
+
+  const saveChemicalLedgersAll = useCallback(
+    (list: ChemicalLedger[]) => {
+      saveChemicalYearBookAll({ ...chemicalYearBook, [String(ledgerCalendarYear())]: list })
+    },
+    [chemicalYearBook, saveChemicalYearBookAll],
   )
 
   const deleteLog = useCallback(
@@ -145,9 +204,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       inspections,
       logs,
       chemicalLedgers,
+      chemicalYearBook,
       saveCatalog,
       saveInspection,
+      saveInspectionsAll,
       deleteInspection,
+      saveChemicalYearBookAll,
       saveChemicalLedgersAll,
       deleteLog,
       refreshLogs,
@@ -158,9 +220,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       inspections,
       logs,
       chemicalLedgers,
+      chemicalYearBook,
       saveCatalog,
       saveInspection,
+      saveInspectionsAll,
       deleteInspection,
+      saveChemicalYearBookAll,
       saveChemicalLedgersAll,
       deleteLog,
       refreshLogs,

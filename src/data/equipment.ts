@@ -35,7 +35,7 @@ export const EQUIPMENT_LIST: Equipment[] = [
     items: [
       { no: 1, point: '연필 홀더 상태', timing: '정', criteria: '연필 고정이 흔들림 없이 견고할 것' },
       { no: 2, point: '연필 심 상태', timing: '정', criteria: '마모, 깨짐 없이 일정한 경도 유지' },
-      { no: 3, point: '하중추(무게추)', timing: '정', criteria: '규정하중(예:500g) 정확한 유지' },
+      { no: 3, point: '하중추(무게추)', timing: '정', criteria: '규정하중(예:500g) 정확한 유지', inputKind: 'number' },
       { no: 4, point: '이동 슬라이드', timing: '운', criteria: '이동 시 걸림 없이 부드럽게 작동할 것' },
       { no: 5, point: '시험판 고정대', timing: '정', criteria: '시편 고정시 흔들림 없을것' },
       { no: 6, point: '시험 각도', timing: '정', criteria: '45˚ 유지' },
@@ -117,8 +117,8 @@ export const EQUIPMENT_LIST: Equipment[] = [
     items: [
       { no: 1, point: '신율계', timing: '정', criteria: '오염물 없을 것' },
       { no: 2, point: '실린더', timing: '정', criteria: '오염물 없을 것, 눈금 0 에 셋팅' },
-      { no: 3, point: '신율계 간격', timing: '정', criteria: '신율계 간격 50mm' },
-      { no: 4, point: '눈금자', timing: '정', criteria: 'PC 모니터 값과 동일할 것 (818)' },
+      { no: 3, point: '신율계 간격', timing: '정', criteria: '신율계 간격 50mm', inputKind: 'number' },
+      { no: 4, point: '눈금자', timing: '정', criteria: 'PC 모니터 값과 동일할 것 (818)', inputKind: 'number' },
       { no: 5, point: '실린더 압력 조절기', timing: '운', criteria: '50~100 (bar)', inputKind: 'number' },
     ],
   },

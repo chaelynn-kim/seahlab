@@ -1,166 +1,190 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ClipboardCheck, Minus, Plus, RotateCcw, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { ChevronLeft, ChevronRight, ClipboardCheck, Pencil, Plus, Printer, RotateCcw, TableProperties, X } from 'lucide-react'
+import { InspectionAllView, InspectionSheet } from '../components/InspectionSheet'
+import { ComposeModeButton } from '../components/ComposeModeButton'
+import { InspTipButton } from '../components/InspTipButton'
+import { PageHead } from '../components/layout/PageHead'
 import diskette from '../assets/diskette.png'
-import { LINE_NAME, SUPPORT_TEAM } from '../data/equipment'
 import { useAppData } from '../context/AppDataContext'
+import { createCheckItem, createEquipment, markEquipmentRemoved, withItemIds } from '../lib/catalog'
+import {
+  DEFAULT_INSP_COL_PCT,
+  INSP_ALL_TAB_ID,
+  loadInspFormLayout,
+  loadInspSheetChrome,
+  saveInspFormLayout,
+  saveInspFormLayoutAll,
+  saveInspSheetChrome,
+  type InspColId,
+  type InspFormLayout,
+  type InspSheetChrome,
+} from '../lib/inspSheet'
 import {
   addMonths,
   daysInMonth,
-  formatKoreanDate,
-  formatMonthLabel,
   pad2,
   todayKey,
 } from '../lib/date'
 import {
   blankResults,
   findInspection,
+  hasIssueMark,
   inspectionStatus,
+  inspectionsContentEqual,
   isBlankDay,
-  isItemFilled,
+  isOffReading,
   itemKey,
+  latestInspectorName,
+  nextMark,
+  upsertInspection,
 } from '../lib/inspections'
 import {
   joinFraction,
   parseFractionParts,
-  readingPlaceholder,
   resolveInputKind,
-  sanitizeDigits,
+  sanitizeFractionDigit,
   sanitizeNumberInput,
-  splitCriteriaHighlight,
 } from '../lib/inputKind'
-import { loadLastInspectorName, saveLastInspectorName, toInspector } from '../lib/actor'
-import type { CheckItem, CheckResult, InspectionRecord } from '../types'
+import { loadInspectorsByEquipment, saveInspectorForEquipment, toInspector } from '../lib/actor'
+import { useComposeMode } from '../lib/composeMode'
+import type { CheckItem, CheckResult, Equipment, InspectionRecord } from '../types'
 
-function CriteriaText({ text }: { text: string }) {
-  return (
-    <>
-      {splitCriteriaHighlight(text).map((part, index) =>
-        part.highlight ? (
-          <span key={`${part.text}-${index}`} className="criteria-num">
-            {part.text}
-          </span>
-        ) : (
-          <span key={`${part.text}-${index}`}>{part.text}</span>
-        ),
-      )}
-    </>
-  )
+function cloneCatalog(list: Equipment[]): Equipment[] {
+  return withItemIds(JSON.parse(JSON.stringify(list)) as Equipment[])
 }
 
-function FractionInput({
-  num,
-  den,
-  numLabel,
-  denLabel,
-  onFocusCell,
-  onNumChange,
-  onDenChange,
-}: {
-  num: string
-  den: string
-  numLabel: string
-  denLabel: string
-  onFocusCell: () => void
-  onNumChange: (value: string) => void
-  onDenChange: (value: string) => void
-}) {
-  const denRef = useRef<HTMLInputElement>(null)
-
-  const focusDen = () => {
-    const input = denRef.current
-    if (!input) return
-    input.focus()
-    input.select()
-  }
-
-  return (
-    <div className="fraction-input">
-      <input
-        value={num}
-        inputMode="numeric"
-        aria-label={numLabel}
-        onFocus={onFocusCell}
-        onKeyDown={(event) => {
-          if (event.key === '/' || event.key === 'Enter') {
-            event.preventDefault()
-            focusDen()
-          }
-        }}
-        onChange={(event) => {
-          const raw = event.target.value
-          if (raw.includes('/')) {
-            onNumChange(sanitizeDigits(raw))
-            queueMicrotask(focusDen)
-            return
-          }
-          const next = sanitizeDigits(raw)
-          const wasEmpty = num.length === 0
-          onNumChange(next)
-          if (wasEmpty && next.length > 0) queueMicrotask(focusDen)
-        }}
-      />
-      <span>/</span>
-      <input
-        ref={denRef}
-        value={den}
-        inputMode="numeric"
-        aria-label={denLabel}
-        onFocus={onFocusCell}
-        onChange={(event) => onDenChange(sanitizeDigits(event.target.value))}
-      />
-    </div>
-  )
-}
-
-function nextMark(current: CheckResult): CheckResult {
-  if (current === '') return 'O'
-  if (current === 'O') return 'X'
-  return ''
-}
-
-function mergeRecord(
-  list: InspectionRecord[],
-  record: InspectionRecord,
-): InspectionRecord[] {
-  const index = list.findIndex((item) => item.id === record.id)
-  if (index < 0) return [record, ...list]
-  const next = [...list]
-  next[index] = record
-  return next
+function cloneInspections(list: InspectionRecord[]): InspectionRecord[] {
+  return JSON.parse(JSON.stringify(list)) as InspectionRecord[]
 }
 
 export function InspectionPage() {
-  const navigate = useNavigate()
-  const { equipmentList, inspectors, inspections, saveCatalog, saveInspection, deleteInspection } = useAppData()
+  const { equipmentList, inspectors, inspections, saveCatalog, saveInspectionsAll } = useAppData()
   const today = todayKey()
   const now = new Date()
-  const inspectionsRef = useRef(inspections)
-  inspectionsRef.current = inspections
+  const [draftInspections, setDraftInspections] = useState<InspectionRecord[]>(() => cloneInspections(inspections))
+  const [recordsDirty, setRecordsDirty] = useState(false)
+  const draftRef = useRef(draftInspections)
+  draftRef.current = draftInspections
+  const savedInspectionsRef = useRef(inspections)
+  savedInspectionsRef.current = inspections
 
+  const [catalog, setCatalog] = useState<Equipment[]>(() => cloneCatalog(equipmentList))
+  const [catalogDirty, setCatalogDirty] = useState(false)
+  const [chrome, setChrome] = useState<InspSheetChrome>(() => loadInspSheetChrome())
+  const [chromeDirty, setChromeDirty] = useState(false)
   const [equipmentId, setEquipmentId] = useState(equipmentList[0]?.id ?? '')
+  const [layout, setLayout] = useState<InspFormLayout>(() => loadInspFormLayout(equipmentList[0]?.id ?? ''))
+  const [layoutDirty, setLayoutDirty] = useState(false)
+  const colDrag = useRef<{ id: InspColId; startX: number; startPct: number; tableW: number } | null>(null)
+  const rowDrag = useRef<{ id: string; startY: number; startH: number } | null>(null)
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [selectedDate, setSelectedDate] = useState(today)
-  const [inspectorName, setInspectorName] = useState(() => loadLastInspectorName(inspectors))
-  const [needInspector, setNeedInspector] = useState(false)
+  const [inspectorByEquipment, setInspectorByEquipment] = useState<Record<string, string>>(() =>
+    loadInspectorsByEquipment(inspectors),
+  )
+  const [needInspectorId, setNeedInspectorId] = useState<string | null>(null)
+  const [inspectorAlert, setInspectorAlert] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
   const [issueNote, setIssueNote] = useState('')
   const [requestDate, setRequestDate] = useState('')
   const [confirmDate, setConfirmDate] = useState('')
-  const [tabDeleteMode, setTabDeleteMode] = useState(false)
+  const [tabEditMode, setTabEditMode] = useState(false)
+  const [formEdit, setFormEdit] = useState(false)
+  const [printing, setPrinting] = useState(false)
+  const { compose, toggleCompose } = useComposeMode()
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [pendingMonthReset, setPendingMonthReset] = useState(false)
+  const dragTabId = useRef<string | null>(null)
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
+  const dragItemId = useRef<string | null>(null)
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
 
+  const showAll = equipmentId === INSP_ALL_TAB_ID
   const equipment = useMemo(
-    () => equipmentList.find((item) => item.id === equipmentId) ?? equipmentList[0],
-    [equipmentList, equipmentId],
+    () => (showAll ? undefined : catalog.find((item) => item.id === equipmentId) ?? catalog[0]),
+    [catalog, equipmentId, showAll],
   )
 
   useEffect(() => {
-    if (!equipmentList.some((item) => item.id === equipmentId) && equipmentList[0]) {
-      setEquipmentId(equipmentList[0].id)
+    if (!catalogDirty) {
+      setCatalog(cloneCatalog(equipmentList))
+      return
     }
-  }, [equipmentId, equipmentList])
+    setCatalog((prev) => {
+      const have = new Set(prev.map((item) => item.id))
+      const missing = equipmentList.filter((item) => !have.has(item.id))
+      return missing.length ? [...prev, ...cloneCatalog(missing)] : prev
+    })
+  }, [equipmentList, catalogDirty])
+
+  useEffect(() => {
+    if (equipmentId === INSP_ALL_TAB_ID) return
+    if (!catalog.some((item) => item.id === equipmentId) && catalog[0]) {
+      setEquipmentId(catalog[0].id)
+    }
+  }, [equipmentId, catalog])
+
+  useEffect(() => {
+    const seedId = equipmentId === INSP_ALL_TAB_ID ? catalog[0]?.id ?? '' : equipmentId
+    setLayout(loadInspFormLayout(seedId))
+    setLayoutDirty(false)
+    setFormEdit(false)
+  }, [equipmentId])
+
+  useEffect(() => {
+    const onMove = (event: globalThis.MouseEvent) => {
+      if (colDrag.current) {
+        const { id, startX, startPct, tableW } = colDrag.current
+        const next = Math.max(1.4, startPct + ((event.clientX - startX) / tableW) * 100)
+        setLayout((prev) => ({ ...prev, colPct: { ...prev.colPct, [id]: next } }))
+        setLayoutDirty(true)
+      }
+      if (rowDrag.current) {
+        const height = Math.max(18, rowDrag.current.startH + (event.clientY - rowDrag.current.startY))
+        const rowId = rowDrag.current.id
+        setLayout((prev) => ({ ...prev, rowHeights: { ...prev.rowHeights, [rowId]: height } }))
+        setLayoutDirty(true)
+      }
+    }
+    const onUp = () => {
+      colDrag.current = null
+      rowDrag.current = null
+      document.body.classList.remove('chem-resizing', 'chem-resizing-col', 'chem-resizing-row')
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.classList.remove('chem-resizing', 'chem-resizing-col', 'chem-resizing-row')
+    }
+  }, [])
+
+  useEffect(() => {
+    const start = () => {
+      document.body.classList.add('insp-printing')
+      setPrinting(true)
+    }
+    const end = () => {
+      document.body.classList.remove('insp-printing')
+      setPrinting(false)
+    }
+    window.addEventListener('beforeprint', start)
+    window.addEventListener('afterprint', end)
+    return () => {
+      window.removeEventListener('beforeprint', start)
+      window.removeEventListener('afterprint', end)
+      end()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (recordsDirty) return
+    const next = cloneInspections(inspections)
+    draftRef.current = next
+    setDraftInspections(next)
+  }, [inspections, recordsDirty])
 
   const monthPrefix = `${year}-${pad2(month)}`
   const dayCount = daysInMonth(year, month)
@@ -169,36 +193,41 @@ export function InspectionPage() {
   const recordsByDate = useMemo(() => {
     const map = new Map<string, InspectionRecord>()
     if (!equipment) return map
-    for (const record of inspections) {
+    for (const record of draftInspections) {
       if (record.equipmentId !== equipment.id || !record.date.startsWith(monthPrefix)) continue
       map.set(record.date, record)
     }
     return map
-  }, [equipment, inspections, monthPrefix])
+  }, [equipment, draftInspections, monthPrefix])
 
-  const selectedRecord = equipment ? recordsByDate.get(selectedDate) : undefined
+  useEffect(() => {
+    setInspectorByEquipment((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const eq of catalog) {
+        const monthRows = draftInspections.filter(
+          (record) => record.equipmentId === eq.id && record.date.startsWith(monthPrefix),
+        )
+        const fromRecord = latestInspectorName(monthRows)
+        if (!fromRecord || next[eq.id] === fromRecord) continue
+        next[eq.id] = fromRecord
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [catalog, draftInspections, monthPrefix])
 
   useEffect(() => {
     const record = equipment
-      ? findInspection(inspectionsRef.current, equipment.id, selectedDate)
+      ? findInspection(draftInspections, equipment.id, selectedDate)
       : undefined
     setIssueNote(record?.issueNote ?? '')
     setRequestDate(record?.requestDate ?? '')
     setConfirmDate(record?.confirmDate ?? '')
-  }, [equipment, selectedDate])
+  }, [equipment, selectedDate, draftInspections])
 
-  useEffect(() => {
-    const cell = document.querySelector<HTMLElement>('.month-grid thead .col-active')
-    cell?.scrollIntoView({ inline: 'center', block: 'nearest' })
-  }, [equipment?.id, monthPrefix])
-
-  const filledToday = equipment
-    ? equipment.items.filter((item) => isItemFilled(item, selectedRecord)).length
-    : 0
-  const doneDays = [...recordsByDate.values()].filter((record) => inspectionStatus(record) !== 'empty').length
-  const completePct = equipment?.items.length
-    ? Math.round((filledToday / equipment.items.length) * 100)
-    : 0
+  const selectedDay = Number(selectedDate.slice(-2)) || 1
+  const dayActionLabel = selectedDate === today ? '오늘' : `${selectedDay}일`
 
   const selectMonth = (nextYear: number, nextMonth: number) => {
     setYear(nextYear)
@@ -207,6 +236,41 @@ export function InspectionPage() {
     if (selectedDate.startsWith(prefix)) return
     const inThisMonth = today.startsWith(prefix) ? today : `${prefix}-01`
     setSelectedDate(inThisMonth)
+  }
+
+  const commitDraft = (next: InspectionRecord[]) => {
+    draftRef.current = next
+    setDraftInspections(next)
+    const dirty = !inspectionsContentEqual(next, savedInspectionsRef.current)
+    setRecordsDirty(dirty)
+    if (dirty) setSavedFlash(false)
+  }
+
+  const assignInspector = (eqId: string, name: string) => {
+    setInspectorByEquipment((prev) => ({ ...prev, [eqId]: name }))
+    saveInspectorForEquipment(eqId, name)
+    setNeedInspectorId((current) => (current === eqId ? null : current))
+    setInspectorAlert(false)
+    let next = draftRef.current
+    let changed = false
+    for (const record of next) {
+      if (record.equipmentId !== eqId || !record.date.startsWith(monthPrefix)) continue
+      if (record.inspector.name === name) continue
+      const result = upsertInspection(next, {
+        id: record.id,
+        equipmentId: record.equipmentId,
+        date: record.date,
+        inspector: toInspector(name),
+        results: record.results,
+        readings: record.readings,
+        issueNote: record.issueNote,
+        requestDate: record.requestDate,
+        confirmDate: record.confirmDate,
+      })
+      next = result.records
+      changed = true
+    }
+    if (changed) commitDraft(next)
   }
 
   const persistDay = (
@@ -218,108 +282,205 @@ export function InspectionPage() {
       requestDate?: string
       confirmDate?: string
     },
-    log = false,
+    target?: Equipment,
   ): boolean => {
-    if (!equipment) return false
+    const eq = target ?? equipment
+    if (!eq) return false
+    const inspectorName =
+      inspectorByEquipment[eq.id]?.trim() ||
+      latestInspectorName(
+        draftRef.current.filter(
+          (record) => record.equipmentId === eq.id && record.date.startsWith(monthPrefix),
+        ),
+      )
     if (!inspectorName) {
-      setNeedInspector(true)
+      setNeedInspectorId(eq.id)
+      setInspectorAlert(true)
       return false
     }
-    setNeedInspector(false)
-    const existing = findInspection(inspectionsRef.current, equipment.id, date)
-    const sameDay = date === selectedDate
+    setNeedInspectorId((current) => (current === eq.id ? null : current))
+    const existing = findInspection(draftRef.current, eq.id, date)
+    const sameDay = date === selectedDate && eq.id === equipment?.id
     const next = {
-      results: patch.results ?? existing?.results ?? blankResults(equipment.items.map((item) => item.no)),
+      results: patch.results ?? existing?.results ?? blankResults(eq.items.map((item) => item.no)),
       readings: patch.readings ?? existing?.readings ?? {},
       issueNote: patch.issueNote ?? (sameDay ? issueNote : existing?.issueNote ?? ''),
       requestDate: patch.requestDate ?? (sameDay ? requestDate : existing?.requestDate ?? ''),
       confirmDate: patch.confirmDate ?? (sameDay ? confirmDate : existing?.confirmDate ?? ''),
     }
+    if (!hasIssueMark(next.results)) {
+      next.issueNote = ''
+      next.requestDate = ''
+      next.confirmDate = ''
+      if (sameDay) {
+        setIssueNote('')
+        setRequestDate('')
+        setConfirmDate('')
+      }
+    }
     if (isBlankDay(next)) {
       if (existing) {
-        deleteInspection(existing.id)
-        inspectionsRef.current = inspectionsRef.current.filter((item) => item.id !== existing.id)
+        commitDraft(draftRef.current.filter((item) => item.id !== existing.id))
       }
       return true
     }
-    saveLastInspectorName(inspectorName)
-    const record = saveInspection(
-      {
-        id: existing?.id,
-        equipmentId: equipment.id,
-        date,
-        inspector: toInspector(inspectorName),
-        ...next,
-      },
-      { log: log || !existing },
-    )
-    inspectionsRef.current = mergeRecord(inspectionsRef.current, record)
+    saveInspectorForEquipment(eq.id, inspectorName)
+    const result = upsertInspection(draftRef.current, {
+      id: existing?.id,
+      equipmentId: eq.id,
+      date,
+      inspector: toInspector(inspectorName),
+      ...next,
+    })
+    commitDraft(result.records)
     return true
   }
 
-  const toggleCell = (day: number, itemNo: number) => {
-    if (!equipment) return
+  const toggleCell = (eq: Equipment, day: number, itemNo: number) => {
     const date = `${monthPrefix}-${pad2(day)}`
     setSelectedDate(date)
-    const existing = findInspection(inspectionsRef.current, equipment.id, date)
+    const existing = findInspection(draftRef.current, eq.id, date)
     const key = itemKey(itemNo)
     const results = {
-      ...(existing?.results ?? blankResults(equipment.items.map((item) => item.no))),
+      ...(existing?.results ?? blankResults(eq.items.map((item) => item.no))),
       [key]: nextMark(existing?.results[key] ?? ''),
     }
-    persistDay(date, { results })
+    persistDay(date, { results }, eq)
   }
 
-  const saveReading = (day: number, item: CheckItem, value: string) => {
-    if (!equipment) return
+  const saveReading = (eq: Equipment, day: number, item: CheckItem, value: string) => {
     const date = `${monthPrefix}-${pad2(day)}`
     setSelectedDate(date)
-    const existing = findInspection(inspectionsRef.current, equipment.id, date)
+    const existing = findInspection(draftRef.current, eq.id, date)
     const key = itemKey(item.no)
     const kind = resolveInputKind(item)
-    const nextValue = kind === 'number' ? sanitizeNumberInput(value) : value
-    persistDay(date, {
-      readings: { ...(existing?.readings ?? {}), [key]: nextValue },
-    })
+    const nextValue = value.includes('휴')
+      ? '휴'
+      : kind === 'number'
+        ? sanitizeNumberInput(value)
+        : value
+    persistDay(
+      date,
+      {
+        readings: { ...(existing?.readings ?? {}), [key]: nextValue },
+      },
+      eq,
+    )
   }
 
-  const saveFraction = (day: number, item: CheckItem, reading: string, part: 'num' | 'den', value: string) => {
+  const saveFraction = (eq: Equipment, day: number, item: CheckItem, reading: string, part: 'num' | 'den', value: string) => {
     const current = parseFractionParts(reading)
-    const nextNum = part === 'num' ? sanitizeDigits(value) : current.num
-    const nextDen = part === 'den' ? sanitizeDigits(value) : current.den
-    saveReading(day, item, joinFraction(nextNum, nextDen))
+    const nextNum = part === 'num' ? sanitizeFractionDigit(value) : current.num.slice(0, 1)
+    const nextDen = part === 'den' ? sanitizeFractionDigit(value) : current.den.slice(0, 1)
+    saveReading(eq, day, item, joinFraction(nextNum, nextDen))
+  }
+
+  const applyDayMark = (date: string, mark: 'O' | '휴', target?: Equipment) => {
+    const eq = target ?? equipment
+    if (!eq) return false
+    const existing = findInspection(draftRef.current, eq.id, date)
+    const results = {
+      ...(existing?.results ?? blankResults(eq.items.map((item) => item.no))),
+    }
+    const readings = { ...(existing?.readings ?? {}) }
+    for (const item of eq.items) {
+      const key = itemKey(item.no)
+      const kind = resolveInputKind(item)
+      if (kind === 'mark') {
+        results[key] = mark
+        continue
+      }
+      if (mark === '휴') readings[key] = '휴'
+      else if (isOffReading(readings[key])) readings[key] = ''
+    }
+    return persistDay(date, { results, readings }, eq)
   }
 
   const markDayOk = () => {
-    if (!equipment) return
-    const existing = findInspection(inspectionsRef.current, equipment.id, selectedDate)
-    const results = {
-      ...(existing?.results ?? blankResults(equipment.items.map((item) => item.no))),
-    }
-    for (const item of equipment.items) {
-      if (resolveInputKind(item) === 'mark') results[itemKey(item.no)] = 'O'
-    }
-    const ok = persistDay(selectedDate, { results, readings: existing?.readings ?? {} })
-    if (ok) flashSaved()
+    applyDayMark(selectedDate, 'O')
   }
 
-  const resetDay = () => {
+  const markDayOff = () => {
+    applyDayMark(selectedDate, '휴')
+  }
+
+  const requestMonthReset = () => {
     if (!equipment) return
-    const existing = findInspection(inspectionsRef.current, equipment.id, selectedDate)
-    if (existing) {
-      deleteInspection(existing.id)
-      inspectionsRef.current = inspectionsRef.current.filter((item) => item.id !== existing.id)
+    setPendingMonthReset(true)
+  }
+
+  const confirmMonthReset = () => {
+    if (!equipment) {
+      setPendingMonthReset(false)
+      return
     }
+    const eqId = equipment.id
+    const prefix = monthPrefix
+    commitDraft(
+      draftRef.current.filter(
+        (item) => item.equipmentId !== eqId || !item.date.startsWith(prefix),
+      ),
+    )
     setIssueNote('')
     setRequestDate('')
     setConfirmDate('')
+    setPendingMonthReset(false)
+  }
+
+  const markCatalogDirty = () => {
+    setCatalogDirty(true)
+    setSavedFlash(false)
+  }
+
+  const updateCatalog = (updater: (list: Equipment[]) => Equipment[]) => {
+    setCatalog((prev) => updater(prev))
+    markCatalogDirty()
+  }
+
+  const updateEquipment = (id: string, patch: Partial<Equipment>) => {
+    updateCatalog((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
+  }
+
+  const updateItem = (itemId: string, patch: Partial<CheckItem>) => {
+    if (!equipment) return
+    updateEquipment(equipment.id, {
+      items: equipment.items.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+    })
+  }
+
+  const reorderEquipment = (fromId: string, toId: string) => {
+    if (fromId === toId) return
+    updateCatalog((prev) => {
+      const from = prev.findIndex((item) => item.id === fromId)
+      const to = prev.findIndex((item) => item.id === toId)
+      if (from < 0 || to < 0) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
+  const reorderItems = (fromId: string, toId: string) => {
+    if (!equipment || fromId === toId) return
+    const from = equipment.items.findIndex((item) => item.id === fromId)
+    const to = equipment.items.findIndex((item) => item.id === toId)
+    if (from < 0 || to < 0) return
+    const items = [...equipment.items]
+    const [moved] = items.splice(from, 1)
+    items.splice(to, 0, moved)
+    updateEquipment(equipment.id, { items })
   }
 
   const confirmDelete = () => {
     if (!pendingDeleteId) return
-    const next = equipmentList.filter((item) => item.id !== pendingDeleteId)
-    saveCatalog(next, inspectors)
-    setEquipmentId((current) => (current === pendingDeleteId ? next[0]?.id ?? '' : current))
+    const deletedId = pendingDeleteId
+    markEquipmentRemoved(deletedId)
+    updateCatalog((prev) => {
+      const next = prev.filter((item) => item.id !== deletedId)
+      setEquipmentId((current) => (current === deletedId ? next[0]?.id ?? '' : current))
+      return next
+    })
     setPendingDeleteId(null)
   }
 
@@ -328,309 +489,465 @@ export function InspectionPage() {
     window.setTimeout(() => setSavedFlash(false), 1400)
   }
 
-  const saveNotes = () => {
-    const ok = persistDay(
-      selectedDate,
-      { issueNote, requestDate, confirmDate },
-      true,
-    )
-    if (ok) flashSaved()
+  const persistCatalog = () => {
+    if (catalogDirty) saveCatalog(catalog, inspectors)
+    if (chromeDirty) saveInspSheetChrome(chrome)
+    if (layoutDirty) {
+      if (showAll) saveInspFormLayoutAll(catalog.map((item) => item.id), layout)
+      else if (equipment) saveInspFormLayout(equipment.id, layout)
+    }
+    setCatalogDirty(false)
+    setChromeDirty(false)
+    setLayoutDirty(false)
+  }
+
+  const updateChrome = (patch: Partial<InspSheetChrome>) => {
+    setChrome((prev) => ({ ...prev, ...patch }))
+    setChromeDirty(true)
+    setSavedFlash(false)
+  }
+
+  const hasUnsaved = catalogDirty || chromeDirty || layoutDirty || recordsDirty
+
+  const saveAll = () => {
+    persistCatalog()
+    if (recordsDirty) saveInspectionsAll(draftRef.current)
+    setRecordsDirty(false)
+    flashSaved()
+  }
+
+  const commitFormEdit = () => {
+    persistCatalog()
+    setFormEdit(false)
+    flashSaved()
+  }
+
+  const printPage = () => {
+    document.body.classList.add('insp-printing')
+    setPrinting(true)
+    window.setTimeout(() => window.print(), 50)
+  }
+
+  const toggleDayOk = (eq: Equipment, day: number) => {
+    const date = `${monthPrefix}-${pad2(day)}`
+    setSelectedDate(date)
+    const record = findInspection(draftRef.current, eq.id, date)
+    if (inspectionStatus(record) === 'issue') return
+    applyDayMark(date, 'O', eq)
+  }
+
+  const startColResize = (id: InspColId, event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const table =
+      event.currentTarget.closest('table.insp-sheet') ??
+      document.querySelector<HTMLTableElement>('.insp-page .insp-sheet')
+    colDrag.current = {
+      id,
+      startX: event.clientX,
+      startPct: layout.colPct[id] ?? DEFAULT_INSP_COL_PCT[id],
+      tableW: table?.getBoundingClientRect().width || 1,
+    }
+    document.body.classList.add('chem-resizing', 'chem-resizing-col')
+  }
+
+  const startRowResize = (rowId: string, event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const table = event.currentTarget.closest('table.insp-sheet')
+    const rowEl =
+      table?.querySelector(`tr[data-row-id="${CSS.escape(rowId)}"]`) ??
+      document.querySelector(`tr[data-row-id="${CSS.escape(rowId)}"]`)
+    rowDrag.current = {
+      id: rowId,
+      startY: event.clientY,
+      startH: layout.rowHeights[rowId] || rowEl?.getBoundingClientRect().height || 28,
+    }
+    document.body.classList.add('chem-resizing', 'chem-resizing-row')
   }
 
   return (
-    <section>
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">
-            <ClipboardCheck size={24} />
-            일상 점검
-          </h1>
-          <p className="page-desc">
-            {LINE_NAME} · {SUPPORT_TEAM} · 빨간 기준은 수치/분수, 그 외 항목은 O/X로 날짜 칸에 바로 기록합니다.
-          </p>
-        </div>
-      </div>
+    <section className={`insp-page${compose ? ' is-compose' : ''}`}>
+      <PageHead
+        className="no-print"
+        icon={ClipboardCheck}
+        title="설비 일상 점검"
+        description="월별 설비 일상점검 현황을 기록·관리합니다."
+      />
 
-      <div className="page-tabs">
-        {equipmentList.map((item) => (
-          <div key={item.id} className={`chip ${item.id === equipment?.id ? 'active' : ''}`}>
+      <div className="chem-toolbar no-print">
+        <div className="date-bar chem-year-bar insp-month-bar">
+          <div className="insp-month-shift">
             <button
+              className="insp-month-nav"
               type="button"
-              onClick={() => setEquipmentId(item.id)}
-              onFocus={() => setEquipmentId(item.id)}
-            >
-              {item.shortName || item.name}
-            </button>
-            {tabDeleteMode ? (
-              <button
-                className="chip-x"
-                type="button"
-                tabIndex={-1}
-                aria-label={`${item.shortName || item.name} 삭제`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  setPendingDeleteId(item.id)
-                }}
-              >
-                <X size={11} strokeWidth={3} />
-              </button>
-            ) : null}
-          </div>
-        ))}
-        <button className="chip chip-add" type="button" onClick={() => navigate('/settings')}>
-          <Plus size={14} />
-          추가
-        </button>
-        <button
-          className={`chip chip-add ${tabDeleteMode ? 'is-on' : ''}`}
-          type="button"
-          onClick={() => {
-            setTabDeleteMode((value) => !value)
-            setPendingDeleteId(null)
-          }}
-        >
-          <Minus size={14} />
-          삭제
-        </button>
-      </div>
-
-      <div className="date-bar">
-        <label className="grid-control">
-          <span className="date-bar-label">조회 월</span>
-          <input
-            className="select"
-            type="month"
-            value={monthPrefix}
-            onChange={(event) => {
-              const [nextYear, nextMonth] = event.target.value.split('-').map(Number)
-              if (!nextYear || !nextMonth) return
-              selectMonth(nextYear, nextMonth)
-            }}
-          />
-        </label>
-        <label className="grid-control">
-          <span className="date-bar-label">
-            점검자 <span className="req">*</span>
-          </span>
-          <select
-            className={`select ${needInspector ? 'select-warn' : ''}`}
-            value={inspectorName}
-            onChange={(event) => {
-              setInspectorName(event.target.value)
-              setNeedInspector(false)
-              saveLastInspectorName(event.target.value)
-            }}
-          >
-            <option value="" disabled>
-              선택
-            </option>
-            {inspectors.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="date-progress">
-          <div className="date-progress-track" aria-hidden="true">
-            <div className="date-progress-fill" style={{ width: `${completePct}%` }} />
-          </div>
-          <span>
-            {formatKoreanDate(selectedDate)} · {filledToday} / {equipment?.items.length ?? 0} 항목 · {doneDays}일
-            기록
-          </span>
-        </div>
-      </div>
-
-      {!equipment ? (
-        <p className="equip-empty">등록된 설비가 없습니다. 설정에서 설비를 추가해 주세요.</p>
-      ) : (
-        <div className="card month-grid-card">
-          <div className="month-grid-head">
-            <div>
-              <h2>{equipment.name}</h2>
-              <p>
-                {formatMonthLabel(year, month)} · 수치·분수는 칸에 값을 넣고, 상태 항목은 칸을 눌러 O/X를
-                바꿉니다.
-              </p>
-            </div>
-            <div className="month-grid-actions">
-              <button className="secondary-btn" type="button" onClick={markDayOk}>
-                선택일 전체 정상(O)
-              </button>
-              <button className="reset-rect" type="button" onClick={resetDay}>
-                <RotateCcw size={16} />
-                초기화
-              </button>
-              <button className="save-rect" type="button" onClick={saveNotes}>
-                <img src={diskette} alt="" />
-                {savedFlash ? '저장됨' : '저장'}
-              </button>
-            </div>
-          </div>
-
-          {needInspector && <p className="grid-hint">점검자를 먼저 선택한 뒤 기록할 수 있습니다.</p>}
-
-          <div className="month-grid-wrap">
-            <table className="month-grid">
-              <thead>
-                <tr>
-                  <th className="sticky-meta col-equip">설비명</th>
-                  <th className="sticky-meta col-no">NO</th>
-                  <th className="sticky-meta col-point">개소</th>
-                  <th className="sticky-meta col-timing">시기</th>
-                  <th className="sticky-meta col-criteria">기준</th>
-                  {days.map((day) => {
-                    const date = `${monthPrefix}-${pad2(day)}`
-                    const active = date === selectedDate
-                    const isToday = date === today
-                    return (
-                      <th
-                        key={day}
-                        className={`day-col ${active ? 'col-active' : ''} ${isToday ? 'col-today' : ''}`}
-                      >
-                        <button type="button" onClick={() => setSelectedDate(date)}>
-                          {day}
-                        </button>
-                      </th>
-                    )
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {equipment.items.map((item, index) => {
-                  const key = itemKey(item.no)
-                  const kind = resolveInputKind(item)
-                  return (
-                    <tr key={item.id ?? `${item.no}-${item.point}`}>
-                      {index === 0 && (
-                        <th className="sticky-meta col-equip" rowSpan={equipment.items.length} scope="row">
-                          {equipment.name}
-                        </th>
-                      )}
-                      <td className="sticky-meta col-no">{item.no}</td>
-                      <td className="sticky-meta col-point">{item.point}</td>
-                      <td className="sticky-meta col-timing">{item.timing}</td>
-                      <td className="sticky-meta col-criteria">
-                        <CriteriaText text={item.criteria} />
-                      </td>
-                      {days.map((day) => {
-                        const date = `${monthPrefix}-${pad2(day)}`
-                        const record = recordsByDate.get(date)
-                        const mark = record?.results[key] ?? ''
-                        const reading = record?.readings?.[key] ?? ''
-                        const fraction = parseFractionParts(reading)
-                        const active = date === selectedDate
-                        const isToday = date === today
-                        return (
-                          <td
-                            key={day}
-                            className={`day-col ${active ? 'col-active' : ''} ${isToday ? 'col-today' : ''}`}
-                          >
-                            {kind === 'mark' ? (
-                              <button
-                                className={`grid-mark ${mark === 'O' ? 'on-ok' : ''} ${mark === 'X' ? 'on-x' : ''}`}
-                                type="button"
-                                aria-label={`${day}일 ${item.point} ${mark || '미입력'}`}
-                                onClick={() => toggleCell(day, item.no)}
-                              >
-                                {mark || ''}
-                              </button>
-                            ) : kind === 'fraction' ? (
-                              <FractionInput
-                                num={fraction.num}
-                                den={fraction.den}
-                                numLabel={`${day}일 ${item.point} 분자`}
-                                denLabel={`${day}일 ${item.point} 분모`}
-                                onFocusCell={() => setSelectedDate(date)}
-                                onNumChange={(value) => saveFraction(day, item, reading, 'num', value)}
-                                onDenChange={(value) => saveFraction(day, item, reading, 'den', value)}
-                              />
-                            ) : (
-                              <input
-                                className="grid-reading"
-                                value={reading}
-                                inputMode="decimal"
-                                placeholder={readingPlaceholder(item)}
-                                aria-label={`${day}일 ${item.point} 수치`}
-                                onFocus={() => setSelectedDate(date)}
-                                onChange={(event) => saveReading(day, item, event.target.value)}
-                              />
-                            )}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="day-note">
-            <div className="field">
-              <label htmlFor="issueNote">이상 발견 개소 및 조치사항</label>
-              <textarea
-                id="issueNote"
-                rows={2}
-                value={issueNote}
-                onChange={(event) => setIssueNote(event.target.value)}
-                onBlur={() => persistDay(selectedDate, { issueNote, requestDate, confirmDate })}
-                placeholder="이상이 있으면 개소와 조치를 적습니다."
-              />
-            </div>
-            <div className="two-col">
-              <div className="field">
-                <label htmlFor="requestDate">생산 요청일자</label>
-                <input
-                  id="requestDate"
-                  type="date"
-                  value={requestDate}
-                  onChange={(event) => {
-                    setRequestDate(event.target.value)
-                    persistDay(selectedDate, { issueNote, requestDate: event.target.value, confirmDate })
-                  }}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="confirmDate">설비 확인일자</label>
-                <input
-                  id="confirmDate"
-                  type="date"
-                  value={confirmDate}
-                  onChange={(event) => {
-                    setConfirmDate(event.target.value)
-                    persistDay(selectedDate, { issueNote, requestDate, confirmDate: event.target.value })
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="month-nav">
-            <button
-              className="secondary-btn"
-              type="button"
+              aria-label="이전 달"
               onClick={() => {
                 const next = addMonths(year, month, -1)
                 selectMonth(next.year, next.month)
               }}
             >
-              이전 달
+              <ChevronLeft size={14} strokeWidth={2.4} />
+              이전
             </button>
+            <input
+              className="select"
+              type="month"
+              value={monthPrefix}
+              aria-label="조회 월"
+              onChange={(event) => {
+                const [nextYear, nextMonth] = event.target.value.split('-').map(Number)
+                if (!nextYear || !nextMonth) return
+                selectMonth(nextYear, nextMonth)
+              }}
+            />
             <button
-              className="secondary-btn"
+              className="insp-month-nav"
               type="button"
+              aria-label="다음 달"
               onClick={() => {
                 const next = addMonths(year, month, 1)
                 selectMonth(next.year, next.month)
               }}
             >
-              다음 달
+              다음
+              <ChevronRight size={14} strokeWidth={2.4} />
             </button>
           </div>
         </div>
+
+        <div className="date-bar chem-tab-bar">
+          <div className={`page-tabs${tabEditMode ? ' is-editing-tabs' : ''}`}>
+            <div className={`chip ${showAll ? 'active' : ''}`}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEquipmentId(INSP_ALL_TAB_ID)
+                  setFormEdit(false)
+                  setTabEditMode(false)
+                }}
+              >
+                전체
+              </button>
+            </div>
+            {catalog.map((item) => (
+              <div
+                key={item.id}
+                className={`chip ${item.id === equipment?.id ? 'active' : ''} ${draggingTabId === item.id ? 'is-dragging' : ''}`}
+                draggable={tabEditMode}
+                onClick={() => setEquipmentId(item.id)}
+                onDragStart={(event) => {
+                  if (!tabEditMode) return
+                  dragTabId.current = item.id
+                  setDraggingTabId(item.id)
+                  event.dataTransfer.effectAllowed = 'move'
+                }}
+                onDragOver={(event) => {
+                  if (!tabEditMode || !dragTabId.current) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  const fromId = dragTabId.current
+                  if (fromId) reorderEquipment(fromId, item.id)
+                  dragTabId.current = null
+                  setDraggingTabId(null)
+                }}
+                onDragEnd={() => {
+                  dragTabId.current = null
+                  setDraggingTabId(null)
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setEquipmentId(item.id)}
+                  onFocus={() => setEquipmentId(item.id)}
+                >
+                  {item.shortName || item.name}
+                </button>
+                {tabEditMode ? (
+                  <button
+                    className="chip-x"
+                    type="button"
+                    tabIndex={-1}
+                    aria-label={`${item.shortName || item.name} 삭제`}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setPendingDeleteId(item.id)
+                    }}
+                  >
+                    <X size={11} strokeWidth={3} />
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            {tabEditMode ? (
+              <button
+                className="chip chip-add"
+                type="button"
+                onClick={() => {
+                  const next = createEquipment()
+                  updateCatalog((prev) => [...prev, next])
+                  setEquipmentId(next.id)
+                }}
+              >
+                <Plus size={14} />
+                추가
+              </button>
+            ) : null}
+            <button
+              className={`chip chip-add ${tabEditMode ? 'is-edit' : ''}`}
+              type="button"
+              onClick={() => {
+                setTabEditMode((value) => !value)
+                setPendingDeleteId(null)
+              }}
+            >
+              <Pencil size={14} />
+              {tabEditMode ? '수정 완료' : '수정'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {!catalog.length ? (
+        <p className="equip-empty">등록된 설비가 없습니다. 수정에서 설비를 추가해 주세요.</p>
+      ) : (
+        <>
+          <div className="chem-sheet-tools no-print">
+            {formEdit ? (
+              <>
+                <div className="chem-form-bar">
+                  <span>
+                    {showAll
+                      ? '행·열 경계를 끌어 높이와 너비를 조절할 수 있습니다. 완료하면 모든 설비 양식에 적용됩니다.'
+                      : '점검 항목을 수정하고, 행·열 경계를 끌어 높이와 너비를 조절할 수 있습니다.'}
+                  </span>
+                  {showAll ? null : (
+                    <div className="chem-form-tools">
+                      <button
+                        className="secondary-btn"
+                        type="button"
+                        onClick={() => {
+                          if (!equipment) return
+                          updateEquipment(equipment.id, {
+                            items: [...equipment.items, createCheckItem(equipment.items)],
+                          })
+                        }}
+                      >
+                        <Plus size={14} />
+                        항목 추가
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="chem-sheet-tool-btns">
+                  <InspTipButton />
+                  <ComposeModeButton active={compose} onToggle={toggleCompose} />
+                  <button className="chem-doc-btn chem-doc-commit" type="button" onClick={commitFormEdit}>
+                    <TableProperties size={14} />
+                    양식 수정 완료
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <InspTipButton />
+                <ComposeModeButton active={compose} onToggle={toggleCompose} />
+                <button
+                  className="chem-doc-btn"
+                  type="button"
+                  onClick={() => {
+                    setTabEditMode(false)
+                    setFormEdit(true)
+                  }}
+                >
+                  <TableProperties size={14} />
+                  양식 수정
+                </button>
+                <button
+                  className={`chem-doc-btn chem-doc-save ${hasUnsaved ? 'is-dirty' : ''}`}
+                  type="button"
+                  onClick={saveAll}
+                >
+                  <img src={diskette} alt="" />
+                  {hasUnsaved ? '저장' : savedFlash ? '저장됨' : '저장'}
+                </button>
+                <button className="chem-doc-btn" type="button" onClick={printPage}>
+                  <Printer size={14} />
+                  {showAll ? '전체 인쇄' : '인쇄'}
+                </button>
+                {showAll ? null : (
+                  <>
+                    <button className="chem-doc-btn insp-fill-btn" type="button" onClick={markDayOk}>
+                      {dayActionLabel} 전체 O
+                    </button>
+                    <button className="chem-doc-btn" type="button" onClick={markDayOff}>
+                      {dayActionLabel} 휴무
+                    </button>
+                    <button className="chem-doc-btn" type="button" onClick={requestMonthReset}>
+                      <RotateCcw size={14} />
+                      전체 초기화
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          {showAll ? (
+            <InspectionAllView
+              catalog={catalog}
+              inspections={draftInspections}
+              year={year}
+              month={month}
+              days={days}
+              monthPrefix={monthPrefix}
+              today={today}
+              selectedDate={selectedDate}
+              inspectors={inspectors}
+              inspectorByEquipment={inspectorByEquipment}
+              inspectorWarnId={needInspectorId}
+              chrome={chrome}
+              formEdit={formEdit}
+              printing={printing}
+              sharedLayout={layout}
+              onSelectDate={setSelectedDate}
+              onToggleCell={toggleCell}
+              onSaveReading={saveReading}
+              onSaveFraction={saveFraction}
+              onToggleDayOk={toggleDayOk}
+              onChromeChange={updateChrome}
+              onColResizeStart={startColResize}
+              onRowResizeStart={startRowResize}
+              onIssueNoteChange={(eq, day, value) =>
+                persistDay(`${monthPrefix}-${pad2(day)}`, { issueNote: value }, eq)
+              }
+              onRequestDateChange={(eq, day, value) =>
+                persistDay(`${monthPrefix}-${pad2(day)}`, { requestDate: value }, eq)
+              }
+              onConfirmDateChange={(eq, day, value) =>
+                persistDay(`${monthPrefix}-${pad2(day)}`, { confirmDate: value }, eq)
+              }
+              onInspectorChange={(eq, name) => assignInspector(eq.id, name)}
+            />
+          ) : equipment ? (
+          <InspectionSheet
+            equipment={equipment}
+            year={year}
+            month={month}
+            days={days}
+            monthPrefix={monthPrefix}
+            today={today}
+            selectedDate={selectedDate}
+            inspectorName={inspectorByEquipment[equipment.id] ?? ''}
+            inspectors={inspectors}
+            inspectorWarn={needInspectorId === equipment.id}
+            chrome={chrome}
+            recordsByDate={recordsByDate}
+            formEdit={formEdit}
+            printing={printing}
+            draggingItemId={draggingItemId}
+            layout={layout}
+            onSelectDate={setSelectedDate}
+            onToggleCell={(day, itemNo) => toggleCell(equipment, day, itemNo)}
+            onSaveReading={(day, item, value) => saveReading(equipment, day, item, value)}
+            onSaveFraction={(day, item, reading, part, value) =>
+              saveFraction(equipment, day, item, reading, part, value)
+            }
+            onToggleDayOk={(day) => toggleDayOk(equipment, day)}
+            onChromeChange={updateChrome}
+            onRenameEquipment={(patch) => updateEquipment(equipment.id, patch)}
+            onUpdateItem={updateItem}
+            onDeleteItem={(itemId) =>
+              updateEquipment(equipment.id, {
+                items: equipment.items.filter((row) => (row.id ?? '') !== itemId),
+              })
+            }
+            onItemDragStart={(itemId) => {
+              dragItemId.current = itemId
+              setDraggingItemId(itemId)
+            }}
+            onItemDragOver={() => {}}
+            onItemDrop={(itemId) => {
+              const fromId = dragItemId.current
+              if (fromId) reorderItems(fromId, itemId)
+              dragItemId.current = null
+              setDraggingItemId(null)
+            }}
+            onItemDragEnd={() => {
+              dragItemId.current = null
+              setDraggingItemId(null)
+            }}
+            onColResizeStart={startColResize}
+            onRowResizeStart={startRowResize}
+            onIssueNoteChange={(day, value) => {
+              const date = `${monthPrefix}-${pad2(day)}`
+              setSelectedDate(date)
+              setIssueNote(value)
+              persistDay(date, { issueNote: value }, equipment)
+            }}
+            onRequestDateChange={(day, value) => {
+              const date = `${monthPrefix}-${pad2(day)}`
+              setSelectedDate(date)
+              setRequestDate(value)
+              persistDay(date, { requestDate: value }, equipment)
+            }}
+            onConfirmDateChange={(day, value) => {
+              const date = `${monthPrefix}-${pad2(day)}`
+              setSelectedDate(date)
+              setConfirmDate(value)
+              persistDay(date, { confirmDate: value }, equipment)
+            }}
+            onInspectorChange={(name) => assignInspector(equipment.id, name)}
+          />
+          ) : null}
+
+        </>
       )}
+
+      {inspectorAlert ? (
+        <div className="modal-backdrop confirm-backdrop no-print" onClick={() => setInspectorAlert(false)}>
+          <div
+            className="confirm-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="insp-inspector-alert"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p id="insp-inspector-alert">각 점검표에서 점검자를 먼저 선택한 뒤 기록할 수 있습니다.</p>
+            <div className="confirm-modal-actions">
+              <button className="primary-btn" type="button" onClick={() => setInspectorAlert(false)}>
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pendingMonthReset ? (
+        <div className="modal-backdrop confirm-backdrop no-print" onClick={() => setPendingMonthReset(false)}>
+          <div
+            className="confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="insp-reset-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p id="insp-reset-title">초기화하시겠습니까?</p>
+            <div className="confirm-modal-actions">
+              <button className="secondary-btn" type="button" onClick={() => setPendingMonthReset(false)}>
+                아니오
+              </button>
+              <button className="primary-btn" type="button" onClick={confirmMonthReset}>
+                예
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {pendingDeleteId && (
         <div className="modal-backdrop confirm-backdrop no-print" onClick={() => setPendingDeleteId(null)}>
@@ -656,4 +973,3 @@ export function InspectionPage() {
     </section>
   )
 }
-
