@@ -79,4 +79,30 @@ export function isSameMonth(key: string, year: number, month: number): boolean {
   return key.startsWith(`${year}-${pad2(month)}`)
 }
 
+export function dayNumber(date: string): number {
+  return Number(date.slice(-2))
+}
+
+export function datesInMonthRange(monthPrefix: string, fromDate: string, toDate: string, dayCount: number): string[] {
+  const start = Math.max(1, Math.min(dayNumber(fromDate), dayNumber(toDate)))
+  const end = Math.min(dayCount, Math.max(dayNumber(fromDate), dayNumber(toDate)))
+  const next: string[] = []
+  for (let day = start; day <= end; day += 1) next.push(`${monthPrefix}-${pad2(day)}`)
+  return next
+}
+
+export function formatSelectedDaysLabel(dates: string[], today: string): string {
+  if (dates.length <= 1) {
+    const date = dates[0]
+    if (!date) return ''
+    return date === today ? '오늘' : `${dayNumber(date)}일`
+  }
+  const days = dates.map(dayNumber).sort((left, right) => left - right)
+  const last = days[days.length - 1]
+  const first = days[0]
+  if (last - first === days.length - 1) return `${first}~${last}일`
+  if (days.length <= 5) return `${days.join(', ')}일`
+  return `${days.length}일 선택`
+}
+
 export { WEEKDAYS }

@@ -48,24 +48,11 @@ function mergeMissingSeed(list: Equipment[]): Equipment[] {
   const extras = list.filter((item) => !EQUIPMENT_LIST.some((seed) => seed.id === item.id))
   const merged = EQUIPMENT_LIST.flatMap((seed) => {
     const existing = have.get(seed.id)
-    if (existing) return [syncSeedItemKinds(existing, seed)]
+    if (existing) return [existing]
     if (removed.has(seed.id)) return []
     return [cloneList(seed)]
   })
   return [...merged, ...extras]
-}
-
-function syncSeedItemKinds(existing: Equipment, seed: Equipment): Equipment {
-  return {
-    ...existing,
-    items: existing.items.map((item) => {
-      const seedItem = seed.items.find((row) => row.no === item.no)
-      if (!seedItem?.inputKind) return item
-      if (item.point.trim() !== seedItem.point.trim()) return item
-      if (item.inputKind === seedItem.inputKind) return item
-      return { ...item, inputKind: seedItem.inputKind }
-    }),
-  }
 }
 
 function normalizeEquipment(list: Equipment[]): Equipment[] {

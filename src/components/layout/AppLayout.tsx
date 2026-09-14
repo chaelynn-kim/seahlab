@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { ClipboardCheck, FlaskConical, History, Menu, Settings } from 'lucide-react'
+import { ClipboardCheck, FlaskConical, History, LogOut, Menu, Settings } from 'lucide-react'
+import { useAppData } from '../../context/AppDataContext'
+import { useAuth } from '../../context/AuthContext'
 import { SeahLogo } from '../brand/SeahLogo'
 
 const NAV = [
@@ -12,6 +14,9 @@ const NAV = [
 
 export function AppLayout() {
   const [open, setOpen] = useState(false)
+  const { profile, isAdmin, logOut } = useAuth()
+  const { cloudError } = useAppData()
+  const navItems = NAV.filter((item) => item.key === 'inspection' || item.key === 'chemicals' || isAdmin)
 
   return (
     <div className="app-shell">
@@ -26,13 +31,28 @@ export function AppLayout() {
             <strong className="brand-title">SeAH-Lab</strong>
           </div>
         </div>
+        <div className="header-right">
+          {cloudError ? <span className="cloud-error">{cloudError}</span> : null}
+          {profile ? (
+            <div className="user-chip">
+              <span className="avatar">{profile.name.slice(0, 1)}</span>
+              <span>
+                <strong className="name">{profile.name}</strong>
+                <span className="meta">{profile.email}</span>
+              </span>
+            </div>
+          ) : null}
+          <button className="ghost-btn" type="button" aria-label="로그아웃" onClick={() => void logOut()}>
+            <LogOut size={18} />
+          </button>
+        </div>
       </header>
       <div className="body">
         <div className={`overlay ${open ? 'open' : ''}`} onClick={() => setOpen(false)} />
         <aside className={`sidebar ${open ? 'open' : ''}`}>
           <p className="nav-kicker">MENU</p>
           <nav className="nav-list">
-            {NAV.map((item) => {
+            {navItems.map((item) => {
               const Icon = item.icon
               return (
                 <NavLink

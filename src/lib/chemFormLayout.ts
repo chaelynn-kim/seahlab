@@ -18,6 +18,78 @@ const KEY_BY_ID = 'chemFormLayoutById'
 const HEADER_ROW_KEY = 'chemFormHeaderRows'
 const HEADER_ROW_KEY_BY_ID = 'chemFormHeaderRowsById'
 const CHROME_KEY_BY_ID = 'chemSheetChromeById'
+const FONT_KEY_BY_ID = 'chemFormCellFontsById'
+
+export const CHEM_FONT_MIN = 7
+export const CHEM_FONT_MAX = 28
+export const CHEM_CELL = {
+  title: 'chrome-title',
+  meta: 'chrome-meta',
+  legal: 'chrome-legal',
+  footer: 'chrome-footer',
+} as const
+
+export function chemSectionCell(group: ChemColGroup): string {
+  return `thead-section:${group}`
+}
+
+export function chemBlockCell(colId: string): string {
+  return `thead-block:${colId}`
+}
+
+export function chemLeafCell(colId: string): string {
+  return `thead-leaf:${colId}`
+}
+
+export function chemBodyCell(rowId: string, colId: string): string {
+  return `tbody:${rowId}:${colId}`
+}
+
+export function parseChemBodyCell(cellId: string): { rowId: string; colId: string } | null {
+  if (!cellId.startsWith('tbody:')) return null
+  const rest = cellId.slice(6)
+  const sep = rest.lastIndexOf(':')
+  if (sep <= 0 || sep === rest.length - 1) return null
+  return { rowId: rest.slice(0, sep), colId: rest.slice(sep + 1) }
+}
+
+export function resolveChemCellFont(fonts: Record<string, number>, cellId: string): number | undefined {
+  const direct = fonts[cellId]
+  if (direct != null) return direct
+  const body = parseChemBodyCell(cellId)
+  if (body) return fonts[`tbody:${body.colId}`]
+  return undefined
+}
+
+export function defaultChemCellFont(cellId: string): number {
+  if (cellId === CHEM_CELL.title) return 16
+  if (cellId.startsWith('tbody:')) return 9
+  if (cellId.startsWith('chrome-')) return 12
+  return 11
+}
+
+export function clampChemCellFont(value: number): number {
+  return Math.min(CHEM_FONT_MAX, Math.max(CHEM_FONT_MIN, Math.round(value)))
+}
+
+function sanitizeCellFonts(saved: Record<string, number> | null | undefined): Record<string, number> {
+  if (!saved) return {}
+  return Object.fromEntries(
+    Object.entries(saved).filter(([, size]) => Number.isFinite(size) && size >= CHEM_FONT_MIN && size <= CHEM_FONT_MAX),
+  )
+}
+
+export function loadChemCellFonts(ledgerId = ''): Record<string, number> {
+  if (!ledgerId) return {}
+  const byId = readJson<Record<string, Record<string, number>>>(FONT_KEY_BY_ID, {})
+  return sanitizeCellFonts(byId[ledgerId])
+}
+
+export function saveChemCellFonts(fonts: Record<string, number>, ledgerId = ''): void {
+  if (!ledgerId) return
+  const byId = readJson<Record<string, Record<string, number>>>(FONT_KEY_BY_ID, {})
+  writeJson(FONT_KEY_BY_ID, { ...byId, [ledgerId]: sanitizeCellFonts(fonts) })
+}
 
 export interface ChemSheetChrome {
   legal: string
@@ -26,6 +98,7 @@ export interface ChemSheetChrome {
   footer: string
   inSection: string
   outSection: string
+  metaLeftPct: number
 }
 
 export const DEFAULT_CHEM_CHROME: ChemSheetChrome = {
@@ -35,13 +108,19 @@ export const DEFAULT_CHEM_CHROME: ChemSheetChrome = {
   footer: '297mm × 210mm [백상지 80g/m²]',
   inSection: '입 고 량',
   outSection: '출 고 량',
+  metaLeftPct: 50,
 }
 
 function defaultChrome(): ChemSheetChrome {
   return { ...DEFAULT_CHEM_CHROME }
 }
 
+function clampMetaLeft(value: number): number {
+  return Math.min(72, Math.max(28, value))
+}
+
 function normalizeChrome(saved: Partial<ChemSheetChrome> | null | undefined): ChemSheetChrome {
+  const metaLeft = Number(saved?.metaLeftPct)
   return {
     legal: typeof saved?.legal === 'string' ? saved.legal : DEFAULT_CHEM_CHROME.legal,
     titleBefore: typeof saved?.titleBefore === 'string' ? saved.titleBefore : DEFAULT_CHEM_CHROME.titleBefore,
@@ -49,6 +128,7 @@ function normalizeChrome(saved: Partial<ChemSheetChrome> | null | undefined): Ch
     footer: typeof saved?.footer === 'string' ? saved.footer : DEFAULT_CHEM_CHROME.footer,
     inSection: typeof saved?.inSection === 'string' ? saved.inSection : DEFAULT_CHEM_CHROME.inSection,
     outSection: typeof saved?.outSection === 'string' ? saved.outSection : DEFAULT_CHEM_CHROME.outSection,
+    metaLeftPct: Number.isFinite(metaLeft) ? clampMetaLeft(metaLeft) : DEFAULT_CHEM_CHROME.metaLeftPct,
   }
 }
 
@@ -68,6 +148,20 @@ export function saveChemSheetChrome(chrome: ChemSheetChrome, ledgerId = ''): Che
 
 export const HEADER_ROW_IDS = ['thead-section', 'thead-block', 'thead-leaf'] as const
 export type HeaderRowId = (typeof HEADER_ROW_IDS)[number]
+export const CHEM_BODY_ROW_KEY = 'tbody'
+export const CHROME_TITLE_ROW = 'chrome-title'
+export const CHROME_META_ROW = 'chrome-meta'
+export const CHROME_META_LEFT = 'chrome-meta-left'
+
+export function isChemHeaderRowId(id: string): boolean {
+  return id.startsWith('thead-') || id === CHROME_TITLE_ROW || id === CHROME_META_ROW
+}
+
+export function keepLayoutHeights(prev: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(prev).filter(([id]) => isChemHeaderRowId(id) || id === CHEM_BODY_ROW_KEY),
+  )
+}
 
 function sanitizeHeaderHeights(saved: Record<string, number> | null): Record<string, number> {
   if (!saved) return {}
@@ -231,22 +325,27 @@ export function saveChemFormLayoutAll(
   columns: ChemFormColumn[],
   chrome: ChemSheetChrome,
   rowHeights: Record<string, number>,
+  cellFonts: Record<string, number> = {},
 ): void {
   const normalized = normalizeColumns(columns)
   const nextChrome = normalizeChrome(chrome)
   const heights = sanitizeHeaderHeights(rowHeights)
+  const fonts = sanitizeCellFonts(cellFonts)
   const cols = { ...columnsById() }
   const chromeById = readJson<Record<string, ChemSheetChrome>>(CHROME_KEY_BY_ID, {})
   const heightsById = readJson<Record<string, Record<string, number>>>(HEADER_ROW_KEY_BY_ID, {})
+  const fontsById = readJson<Record<string, Record<string, number>>>(FONT_KEY_BY_ID, {})
   for (const id of ledgerIds) {
     if (!id || id === '__all__') continue
     cols[id] = normalized
     chromeById[id] = nextChrome
     heightsById[id] = heights
+    fontsById[id] = fonts
   }
   writeJson(KEY_BY_ID, cols)
   writeJson(CHROME_KEY_BY_ID, chromeById)
   writeJson(HEADER_ROW_KEY_BY_ID, heightsById)
+  writeJson(FONT_KEY_BY_ID, fontsById)
 }
 
 export function removeChemFormLayout(ledgerId: string): void {
@@ -265,6 +364,11 @@ export function removeChemFormLayout(ledgerId: string): void {
   if (chrome[ledgerId]) {
     const { [ledgerId]: _removed, ...rest } = chrome
     writeJson(CHROME_KEY_BY_ID, rest)
+  }
+  const fonts = readJson<Record<string, Record<string, number>>>(FONT_KEY_BY_ID, {})
+  if (fonts[ledgerId]) {
+    const { [ledgerId]: _removed, ...rest } = fonts
+    writeJson(FONT_KEY_BY_ID, rest)
   }
 }
 

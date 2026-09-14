@@ -202,6 +202,129 @@ a {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.cloud-error {
+  max-width: 280px;
+  color: #ffd7d0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.login-card {
+  width: min(420px, 100%);
+  padding: 32px 28px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.login-brand .seah-logo {
+  color: var(--header);
+}
+
+.login-brand strong {
+  font-size: 20px;
+}
+
+.login-card h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.login-card p {
+  margin: 0 0 20px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.login-btn {
+  width: 100%;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.login-error {
+  margin: 12px 0 0 !important;
+  color: var(--warn) !important;
+  font-weight: 700;
+}
+
+.login-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 16px 0 0 !important;
+  font-size: 13px;
+}
+
+.login-boot {
+  margin: 0 !important;
+  font-weight: 700;
+  color: var(--text) !important;
+}
+
+.boot-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #e9e9e9;
+}
+
+.boot-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.boot-spinner {
+  position: relative;
+  width: 44px;
+  height: 44px;
+}
+
+.boot-spinner span {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 3.5px;
+  height: 11px;
+  margin-left: -1.75px;
+  border-radius: 99px;
+  background: #8a8a8a;
+  transform-origin: 1.75px 22px;
+  animation: boot-spinner-fade 1s linear infinite;
+}
+
+.boot-message {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+@keyframes boot-spinner-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0.15; }
+}
+
 .body {
   display: flex;
   min-height: calc(100vh - var(--header-height));
@@ -280,14 +403,14 @@ a {
 }
 
 .app-shell:has(.is-compose) .main {
-  padding: 12px 16px 16px;
+  padding: 8px 10px 10px;
 }
 
 .is-compose .page-head {
   display: none;
 }
 
-.is-compose .chem-toolbar {
+.is-compose .chem-sheet-tools {
   margin-bottom: 8px;
 }
 
@@ -1659,6 +1782,13 @@ a {
   padding: 6px 10px;
   font-size: 13px;
   font-weight: 700;
+  cursor: grab;
+  user-select: none;
+}
+
+.inspector-chip.is-dragging {
+  opacity: 0.45;
+  cursor: grabbing;
 }
 
 .inspector-chip button {
@@ -1668,6 +1798,7 @@ a {
   font-size: 16px;
   line-height: 1;
   padding: 0;
+  cursor: pointer;
 }
 
 .inspector-add {
@@ -1680,6 +1811,47 @@ a {
 .inspector-add .field {
   flex: 1;
   min-width: 180px;
+}
+
+.stamp-card {
+  margin-top: 16px;
+}
+
+.stamp-help {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.stamp-preview-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(280px, 100%);
+  min-height: 72px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid #111;
+  background: #fff;
+}
+
+.stamp-preview {
+  display: block;
+  max-width: 100%;
+  height: 44px;
+  object-fit: contain;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (max-width: 960px) {
@@ -1735,7 +1907,8 @@ a {
     margin-left: 0;
   }
 
-  .header-right .user-chip .meta {
+  .header-right .user-chip .meta,
+  .cloud-error {
     display: none;
   }
 
@@ -2055,6 +2228,42 @@ a {
   flex-shrink: 0;
 }
 
+.insp-page .chem-sheet-tools {
+  justify-content: flex-end;
+  overflow: visible;
+  position: relative;
+  z-index: 20;
+}
+
+.insp-tool-split {
+  width: 3px;
+  height: 22px;
+  margin: 0 2px;
+  border-radius: 99px;
+  background: #d0cdc8;
+  flex-shrink: 0;
+}
+
+.chem-doc-btn.insp-reset-btn:hover:not(:disabled),
+.chem-doc-btn.insp-reset-btn:active:not(:disabled) {
+  background: var(--warn-soft);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.insp-print-btn {
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+  color: #fff;
+}
+
+.chem-doc-btn.insp-print-btn:hover:not(:disabled),
+.chem-doc-btn.insp-print-btn:active:not(:disabled) {
+  background: #000;
+  border-color: #000;
+  color: #fff;
+}
+
 .insp-sheet-progress {
   margin: 0 auto 0 0;
   font-size: 13px;
@@ -2146,8 +2355,8 @@ a {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  gap: 20px;
-  padding: 10px 0 12px;
+  gap: 48px;
+  padding: 44px 0 16px;
 }
 
 .insp-stack-paper {
@@ -2437,7 +2646,17 @@ a {
 }
 
 .insp-sheet .day-col.is-today {
-  background: #fff7f4;
+  position: relative;
+  z-index: 1;
+  box-shadow: inset 2px 0 0 var(--accent), inset -2px 0 0 var(--accent);
+}
+
+.insp-sheet .insp-cols .day-col.is-today {
+  box-shadow: inset 2px 2px 0 var(--accent), inset -2px 0 0 var(--accent);
+}
+
+.insp-sheet .insp-status-row .day-col.is-today {
+  box-shadow: inset 2px 0 0 var(--accent), inset -2px -2px 0 var(--accent);
 }
 
 .insp-sheet .day-col.is-active {
@@ -2456,6 +2675,12 @@ a {
   font: inherit;
   font-weight: 800;
   padding: 3px 0;
+  touch-action: none;
+  user-select: none;
+}
+
+body.insp-day-selecting {
+  user-select: none;
 }
 
 .insp-sheet tbody td,
@@ -2556,6 +2781,7 @@ a {
 
 .insp-tip {
   position: relative;
+  z-index: 30;
 }
 
 .insp-tip-btn {
@@ -2564,8 +2790,9 @@ a {
   color: #9a3412;
 }
 
-.insp-tip-btn:hover,
-.insp-tip-btn.is-on {
+.chem-doc-btn.insp-tip-btn:hover:not(:disabled),
+.chem-doc-btn.insp-tip-btn.is-on,
+.chem-doc-btn.insp-tip-btn.is-on:hover:not(:disabled) {
   background: #ffe8b3;
   border-color: var(--accent);
   color: var(--accent);
@@ -2575,9 +2802,11 @@ a {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 24;
-  width: min(300px, calc(100vw - 32px));
-  padding: 12px 14px 10px;
+  left: auto;
+  z-index: 40;
+  width: max-content;
+  max-width: min(640px, calc(100vw - 48px));
+  padding: 12px 16px 10px;
   border: 2px solid var(--accent);
   border-radius: 12px;
   background: #fffdf6;
@@ -2593,6 +2822,10 @@ a {
   letter-spacing: 0.02em;
 }
 
+.insp-tip-panel ul + .insp-tip-title {
+  margin-top: 12px;
+}
+
 .insp-tip-panel ul {
   margin: 0;
   padding: 0;
@@ -2606,6 +2839,16 @@ a {
   font-weight: 700;
   line-height: 1.4;
   color: #333;
+}
+
+.insp-tip-cycle {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .insp-tip-cycle {
+    white-space: normal;
+  }
 }
 
 .insp-tip-ok { color: var(--ok); }
@@ -2759,6 +3002,7 @@ a {
 }
 
 .chem-paper {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: #fff;
@@ -2787,23 +3031,39 @@ a {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  gap: 16px;
-  padding: 0 0 12px;
+  gap: 48px;
+  padding: 44px 0 16px;
+}
+
+.chem-page-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  gap: 48px;
+  padding: 44px 0 16px;
 }
 
 .chem-stack-paper {
+  position: relative;
   flex: 0 0 auto;
   min-height: 198mm;
   overflow: visible;
 }
 
-.chem-all-stack .chem-sheet {
+.chem-all-stack .chem-sheet,
+.chem-page-stack .chem-sheet {
   min-height: 198mm;
 }
 
 .chem-all-stack .chem-sheet,
 .chem-all-stack .chem-frame,
-.chem-all-stack .chem-table-wrap {
+.chem-all-stack .chem-table-wrap,
+.chem-page-stack .chem-sheet,
+.chem-page-stack .chem-frame,
+.chem-page-stack .chem-table-wrap {
   overflow: visible;
   height: auto;
 }
@@ -2837,12 +3097,37 @@ a {
   color: #111;
 }
 
+.chem-print-probe {
+  position: absolute;
+  left: -14000px;
+  top: 0;
+  width: 285mm;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.chem-print-probe .chem-sheet,
+.chem-print-probe .chem-frame,
+.chem-print-probe .chem-table-wrap,
+.chem-print-probe .chem-table {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.chem-print-probe .chem-table tbody td,
+.chem-print-probe .chem-table tbody td input,
+.chem-print-probe .chem-table tbody td textarea {
+  min-height: 0 !important;
+}
+
 .chem-page-guides {
   position: absolute;
   inset: 0;
-  z-index: 6;
+  z-index: 8;
   pointer-events: none;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .chem-page-guide {
@@ -2855,15 +3140,17 @@ a {
 .chem-page-guide span {
   position: absolute;
   right: 0;
-  top: -28px;
+  top: -6px;
+  transform: translateY(-100%);
   padding: 5px 12px;
-  border-radius: 999px 999px 0 0;
+  border-radius: 999px;
   background: var(--accent);
   color: #fff;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.02em;
   line-height: 1.4;
+  white-space: nowrap;
 }
 
 .chem-page-guide.is-first {
@@ -2871,8 +3158,9 @@ a {
 }
 
 .chem-page-guide.is-first span {
-  top: 10px;
-  border-radius: 999px;
+  top: 0;
+  right: 0;
+  transform: translateY(calc(-100% - 6px));
 }
 
 .chem-legal {
@@ -2926,9 +3214,33 @@ body.chem-form-edit .chem-chrome-input {
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chem-doc-btn:hover:not(:disabled) {
+  border-color: #b8b3ad;
+  background: #f6f4f1;
+}
+
+.chem-doc-btn:active:not(:disabled) {
+  border-color: #8c8780;
+  background: #eeebe6;
+}
+
+.chem-doc-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .chem-doc-btn.is-on {
+  background: #fff4ee;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chem-doc-btn.is-on:hover:not(:disabled),
+.chem-doc-btn.is-on:active:not(:disabled) {
   background: #fff4ee;
   border-color: var(--accent);
   color: var(--accent);
@@ -3009,6 +3321,7 @@ body.chem-form-edit .chem-chrome-input {
 }
 
 .chem-title-row {
+  position: relative;
   display: flex;
   flex-shrink: 0;
   flex-wrap: wrap;
@@ -3019,6 +3332,60 @@ body.chem-form-edit .chem-chrome-input {
   padding: calc(3px + 2pt) 8px;
   border-bottom: 1px solid #111;
   font-size: calc(14px + 2pt);
+}
+
+.chem-meta {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid #111;
+  padding: 3px 6px;
+  font-size: var(--form-text);
+  font-weight: 700;
+}
+
+.chem-align-grid {
+  display: grid;
+  width: 100%;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, var(--chem-meta-left, 50%)) minmax(3.5em, 1fr) minmax(3.5em, 1fr) minmax(3.5em, 1fr) max-content;
+  gap: 2px 8px;
+  align-items: center;
+}
+
+.chem-meta-split {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  transform: translateX(-50%);
+  z-index: 4;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: col-resize;
+}
+
+.chem-meta-split:hover,
+.chem-meta-split:focus {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.chem-title-row.is-chrome-edit,
+.chem-meta.is-chrome-edit {
+  overflow: visible;
+  z-index: 3;
+}
+
+.chem-chrome-row-handle {
+  height: 14px;
+  bottom: -6px;
+  z-index: 6;
 }
 
 .chem-mark {
@@ -3039,26 +3406,6 @@ body.chem-form-edit .chem-chrome-input {
   place-items: center;
   font-size: calc(11px + 2pt);
   line-height: 1;
-}
-
-.chem-meta {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  border: 0;
-  border-bottom: 1px solid #111;
-  padding: 3px 6px;
-  font-size: var(--form-text);
-  font-weight: 700;
-}
-
-.chem-align-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 50%) minmax(3.5em, 1fr) minmax(3.5em, 1fr) minmax(3.5em, 1fr) max-content;
-  gap: 2px 8px;
-  align-items: center;
 }
 
 .chem-class-label {
@@ -3185,6 +3532,8 @@ body.chem-form-edit .chem-chrome-input {
 }
 
 .chem-table-wrap {
+  position: relative;
+  z-index: 0;
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
@@ -3464,6 +3813,48 @@ body.chem-form-edit .chem-chrome-input {
   color: var(--accent);
 }
 
+.chem-font-size {
+  min-width: 4.4em;
+  text-align: center;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.chem-font-size.is-off {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.chem-table.is-editing th,
+.chem-table.is-editing td {
+  user-select: none;
+}
+
+.chem-table.is-editing th.is-cell-on,
+.chem-table.is-editing td.is-cell-on,
+.chem-title-row.is-cell-on,
+.chem-meta.is-cell-on,
+.chem-legal.is-cell-on,
+.chem-paper-size.is-cell-on {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chem-table th.is-cell-font .chem-th-input,
+.chem-table td.is-cell-font input,
+.chem-table td.is-cell-font textarea,
+.chem-table td.is-cell-font .chem-qty em,
+.chem-title-row.is-cell-font,
+.chem-title-row.is-cell-font .chem-chrome-input,
+.chem-meta.is-cell-font,
+.chem-meta.is-cell-font input,
+.chem-legal.is-cell-font,
+.chem-legal.is-cell-font .chem-chrome-input,
+.chem-paper-size.is-cell-font,
+.chem-paper-size.is-cell-font .chem-chrome-input {
+  font-size: inherit;
+}
+
 .chem-table.is-editing th,
 .chem-table.is-editing td {
   position: relative;
@@ -3679,7 +4070,8 @@ body.insp-printing .insp-unit-hint {
   display: none !important;
 }
 
-body.chem-resizing {
+body.chem-resizing,
+body.chem-selecting-cells {
   user-select: none;
 }
 
@@ -3720,6 +4112,7 @@ body.chem-resizing-row * {
   .chem-table-wrap,
   .chem-all-wrap,
   .chem-all-stack,
+  .chem-page-stack,
   .insp-all-wrap,
   .insp-all-stack,
   .insp-stack-paper {
@@ -3743,6 +4136,7 @@ body.chem-resizing-row * {
   .chem-table-wrap,
   .chem-all-wrap,
   .chem-all-stack,
+  .chem-page-stack,
   .insp-all-wrap,
   .insp-all-stack,
   .insp-stack-paper {
@@ -3753,6 +4147,23 @@ body.chem-resizing-row * {
   .insp-stack-paper + .insp-stack-paper {
     break-before: page;
     page-break-before: always;
+  }
+
+  .chem-stack-paper,
+  .chem-stack-paper .chem-sheet {
+    min-height: 198mm !important;
+    height: 198mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .chem-stack-paper .chem-frame {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    border: 2.5px solid #111 !important;
   }
 
   .insp-page,
@@ -3919,12 +4330,13 @@ body.chem-resizing-row * {
   }
 
   .chem-table tbody tr {
-    break-inside: auto;
-    page-break-inside: auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .chem-table tbody tr,
   .chem-table tbody td {
+    min-height: 0 !important;
     max-height: none !important;
     overflow: visible !important;
   }

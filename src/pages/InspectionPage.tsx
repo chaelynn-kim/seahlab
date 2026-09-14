@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { ChevronLeft, ChevronRight, ClipboardCheck, Pencil, Plus, Printer, RotateCcw, TableProperties, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
+import { ChevronLeft, ChevronRight, ClipboardCheck, Pencil, Plus, Printer, Redo2, RotateCcw, TableProperties, Undo2, X } from 'lucide-react'
 import { InspectionAllView, InspectionSheet } from '../components/InspectionSheet'
 import { ComposeModeButton } from '../components/ComposeModeButton'
 import { InspTipButton } from '../components/InspTipButton'
 import { PageHead } from '../components/layout/PageHead'
 import diskette from '../assets/diskette.png'
 import { useAppData } from '../context/AppDataContext'
-import { createCheckItem, createEquipment, markEquipmentRemoved, withItemIds } from '../lib/catalog'
+import { createEquipment, markEquipmentRemoved, withItemIds } from '../lib/catalog'
 import {
   DEFAULT_INSP_COL_PCT,
   INSP_ALL_TAB_ID,
@@ -21,7 +21,9 @@ import {
 } from '../lib/inspSheet'
 import {
   addMonths,
+  datesInMonthRange,
   daysInMonth,
+  formatSelectedDaysLabel,
   pad2,
   todayKey,
 } from '../lib/date'
@@ -57,6 +59,12 @@ function cloneInspections(list: InspectionRecord[]): InspectionRecord[] {
   return JSON.parse(JSON.stringify(list)) as InspectionRecord[]
 }
 
+interface InspFormSnapshot {
+  layout: InspFormLayout
+  chrome: InspSheetChrome
+  catalog: Equipment[]
+}
+
 export function InspectionPage() {
   const { equipmentList, inspectors, inspections, saveCatalog, saveInspectionsAll } = useAppData()
   const today = todayKey()
@@ -79,7 +87,12 @@ export function InspectionPage() {
   const rowDrag = useRef<{ id: string; startY: number; startH: number } | null>(null)
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
+  const [selectedDates, setSelectedDates] = useState<string[]>([today])
   const [selectedDate, setSelectedDate] = useState(today)
+  const selectAnchorRef = useRef(today)
+  const selectedDatesRef = useRef(selectedDates)
+  selectedDatesRef.current = selectedDates
+  const dayDragRef = useRef<{ start: string; additive: boolean; base: string[] } | null>(null)
   const [inspectorByEquipment, setInspectorByEquipment] = useState<Record<string, string>>(() =>
     loadInspectorsByEquipment(inspectors),
   )
@@ -91,6 +104,8 @@ export function InspectionPage() {
   const [confirmDate, setConfirmDate] = useState('')
   const [tabEditMode, setTabEditMode] = useState(false)
   const [formEdit, setFormEdit] = useState(false)
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
   const [printing, setPrinting] = useState(false)
   const { compose, toggleCompose } = useComposeMode()
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
@@ -99,6 +114,18 @@ export function InspectionPage() {
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
   const dragItemId = useRef<string | null>(null)
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
+  const formEditRef = useRef(formEdit)
+  formEditRef.current = formEdit
+  const historyRef = useRef<{ past: InspFormSnapshot[]; future: InspFormSnapshot[] }>({ past: [], future: [] })
+  const lastHistorySourceRef = useRef<string | null>(null)
+  const applyingHistoryRef = useRef(false)
+  const resizeSnapRef = useRef<InspFormSnapshot | null>(null)
+  const formSnapRef = useRef<InspFormSnapshot>({
+    layout,
+    chrome,
+    catalog,
+  })
+  formSnapRef.current = { layout, chrome, catalog }
 
   const showAll = equipmentId === INSP_ALL_TAB_ID
   const equipment = useMemo(
@@ -130,6 +157,11 @@ export function InspectionPage() {
     setLayout(loadInspFormLayout(seedId))
     setLayoutDirty(false)
     setFormEdit(false)
+    historyRef.current = { past: [], future: [] }
+    lastHistorySourceRef.current = null
+    resizeSnapRef.current = null
+    setCanUndo(false)
+    setCanRedo(false)
   }, [equipmentId])
 
   useEffect(() => {
@@ -148,9 +180,19 @@ export function InspectionPage() {
       }
     }
     const onUp = () => {
+      const didResize = Boolean(colDrag.current || rowDrag.current)
       colDrag.current = null
       rowDrag.current = null
       document.body.classList.remove('chem-resizing', 'chem-resizing-col', 'chem-resizing-row')
+      if (didResize && resizeSnapRef.current) {
+        historyRef.current.past.push(resizeSnapRef.current)
+        if (historyRef.current.past.length > 80) historyRef.current.past.shift()
+        historyRef.current.future = []
+        lastHistorySourceRef.current = null
+        setCanUndo(true)
+        setCanRedo(false)
+      }
+      resizeSnapRef.current = null
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -226,16 +268,92 @@ export function InspectionPage() {
     setConfirmDate(record?.confirmDate ?? '')
   }, [equipment, selectedDate, draftInspections])
 
-  const selectedDay = Number(selectedDate.slice(-2)) || 1
-  const dayActionLabel = selectedDate === today ? '오늘' : `${selectedDay}일`
+  const dayActionLabel = formatSelectedDaysLabel(selectedDates, today)
+
+  const replaceSelection = (dates: string[], primary?: string, keepAnchor = false) => {
+    const unique = [...new Set(dates)].sort()
+    const next = unique.length ? unique : [primary ?? selectedDate]
+    setSelectedDates(next)
+    const focus = primary && next.includes(primary) ? primary : next[next.length - 1]
+    if (focus) {
+      setSelectedDate(focus)
+      if (primary && !keepAnchor) selectAnchorRef.current = primary
+    }
+  }
+
+  const selectSingleDate = (date: string) => {
+    replaceSelection([date], date)
+  }
+
+  const startDaySelect = (date: string, event: PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0 || formEdit) return
+    event.preventDefault()
+    const additive = event.ctrlKey || event.metaKey
+    if (event.shiftKey) {
+      const anchor = selectAnchorRef.current
+      replaceSelection(datesInMonthRange(monthPrefix, anchor, date, dayCount), date, true)
+      dayDragRef.current = { start: anchor, additive: false, base: [] }
+    } else if (additive) {
+      const prev = selectedDatesRef.current
+      const next = prev.includes(date)
+        ? prev.length > 1
+          ? prev.filter((item) => item !== date)
+          : prev
+        : [...prev, date]
+      replaceSelection(next, date)
+      dayDragRef.current = { start: date, additive: true, base: next }
+    } else {
+      replaceSelection([date], date)
+      dayDragRef.current = { start: date, additive: false, base: [] }
+    }
+    document.body.classList.add('insp-day-selecting')
+  }
+
+  useEffect(() => {
+    const onMove = (event: globalThis.PointerEvent) => {
+      const drag = dayDragRef.current
+      if (!drag) return
+      const target = document.elementFromPoint(event.clientX, event.clientY)
+      const host = target instanceof Element ? target.closest('[data-insp-day]') : null
+      const day = Number(host?.getAttribute('data-insp-day'))
+      if (!Number.isFinite(day) || day < 1) return
+      const date = `${monthPrefix}-${pad2(day)}`
+      const range = datesInMonthRange(monthPrefix, drag.start, date, dayCount)
+      if (drag.additive) replaceSelection([...drag.base, ...range], date, true)
+      else replaceSelection(range, date, true)
+    }
+    const onUp = () => {
+      if (!dayDragRef.current) return
+      dayDragRef.current = null
+      document.body.classList.remove('insp-day-selecting')
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      document.body.classList.remove('insp-day-selecting')
+    }
+  }, [dayCount, monthPrefix])
 
   const selectMonth = (nextYear: number, nextMonth: number) => {
     setYear(nextYear)
     setMonth(nextMonth)
     const prefix = `${nextYear}-${pad2(nextMonth)}`
-    if (selectedDate.startsWith(prefix)) return
+    const kept = selectedDates.filter((date) => date.startsWith(prefix))
+    if (kept.length) {
+      setSelectedDates(kept)
+      if (!kept.includes(selectedDate)) {
+        const focus = kept[kept.length - 1]
+        setSelectedDate(focus)
+        selectAnchorRef.current = focus
+      }
+      return
+    }
     const inThisMonth = today.startsWith(prefix) ? today : `${prefix}-01`
-    setSelectedDate(inThisMonth)
+    replaceSelection([inThisMonth], inThisMonth)
   }
 
   const commitDraft = (next: InspectionRecord[]) => {
@@ -338,7 +456,7 @@ export function InspectionPage() {
 
   const toggleCell = (eq: Equipment, day: number, itemNo: number) => {
     const date = `${monthPrefix}-${pad2(day)}`
-    setSelectedDate(date)
+    selectSingleDate(date)
     const existing = findInspection(draftRef.current, eq.id, date)
     const key = itemKey(itemNo)
     const results = {
@@ -350,7 +468,7 @@ export function InspectionPage() {
 
   const saveReading = (eq: Equipment, day: number, item: CheckItem, value: string) => {
     const date = `${monthPrefix}-${pad2(day)}`
-    setSelectedDate(date)
+    selectSingleDate(date)
     const existing = findInspection(draftRef.current, eq.id, date)
     const key = itemKey(item.no)
     const kind = resolveInputKind(item)
@@ -375,7 +493,7 @@ export function InspectionPage() {
     saveReading(eq, day, item, joinFraction(nextNum, nextDen))
   }
 
-  const applyDayMark = (date: string, mark: 'O' | '휴', target?: Equipment) => {
+  const applyDayMark = (date: string, mark: 'O' | 'X' | '휴', target?: Equipment) => {
     const eq = target ?? equipment
     if (!eq) return false
     const existing = findInspection(draftRef.current, eq.id, date)
@@ -396,12 +514,10 @@ export function InspectionPage() {
     return persistDay(date, { results, readings }, eq)
   }
 
-  const markDayOk = () => {
-    applyDayMark(selectedDate, 'O')
-  }
-
-  const markDayOff = () => {
-    applyDayMark(selectedDate, '휴')
+  const markSelectedDays = (mark: 'O' | 'X' | '휴') => {
+    for (const date of selectedDates) {
+      if (!applyDayMark(date, mark)) break
+    }
   }
 
   const requestMonthReset = () => {
@@ -432,20 +548,93 @@ export function InspectionPage() {
     setSavedFlash(false)
   }
 
-  const updateCatalog = (updater: (list: Equipment[]) => Equipment[]) => {
+  const takeFormSnapshot = (): InspFormSnapshot => ({
+    layout: JSON.parse(JSON.stringify(formSnapRef.current.layout)) as InspFormLayout,
+    chrome: { ...formSnapRef.current.chrome },
+    catalog: cloneCatalog(formSnapRef.current.catalog),
+  })
+
+  const syncHistoryButtons = (past = historyRef.current.past.length, future = historyRef.current.future.length) => {
+    setCanUndo(past > 0)
+    setCanRedo(future > 0)
+  }
+
+  const clearFormHistory = () => {
+    historyRef.current = { past: [], future: [] }
+    lastHistorySourceRef.current = null
+    resizeSnapRef.current = null
+    syncHistoryButtons(0, 0)
+  }
+
+  const pushFormHistory = (source?: string) => {
+    if (!formEditRef.current || applyingHistoryRef.current) return
+    if (source && lastHistorySourceRef.current === source) {
+      historyRef.current.future = []
+      syncHistoryButtons()
+      return
+    }
+    historyRef.current.past.push(takeFormSnapshot())
+    if (historyRef.current.past.length > 80) historyRef.current.past.shift()
+    historyRef.current.future = []
+    lastHistorySourceRef.current = source ?? `step:${historyRef.current.past.length}`
+    syncHistoryButtons()
+  }
+
+  const applyFormSnapshot = (snap: InspFormSnapshot) => {
+    applyingHistoryRef.current = true
+    setLayout(snap.layout)
+    setChrome(snap.chrome)
+    setCatalog(cloneCatalog(snap.catalog))
+    setLayoutDirty(true)
+    setChromeDirty(true)
+    setCatalogDirty(true)
+    setSavedFlash(false)
+    queueMicrotask(() => {
+      applyingHistoryRef.current = false
+    })
+  }
+
+  const undoForm = () => {
+    const { past, future } = historyRef.current
+    if (past.length === 0) return
+    const prev = past.pop()
+    if (!prev) return
+    lastHistorySourceRef.current = null
+    future.push(takeFormSnapshot())
+    applyFormSnapshot(prev)
+    syncHistoryButtons()
+  }
+
+  const redoForm = () => {
+    const { past, future } = historyRef.current
+    if (future.length === 0) return
+    const next = future.pop()
+    if (!next) return
+    lastHistorySourceRef.current = null
+    past.push(takeFormSnapshot())
+    applyFormSnapshot(next)
+    syncHistoryButtons()
+  }
+
+  const updateCatalog = (updater: (list: Equipment[]) => Equipment[], source?: string) => {
+    pushFormHistory(source)
     setCatalog((prev) => updater(prev))
     markCatalogDirty()
   }
 
-  const updateEquipment = (id: string, patch: Partial<Equipment>) => {
-    updateCatalog((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
+  const updateEquipment = (id: string, patch: Partial<Equipment>, source?: string) => {
+    updateCatalog((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)), source)
   }
 
   const updateItem = (itemId: string, patch: Partial<CheckItem>) => {
     if (!equipment) return
-    updateEquipment(equipment.id, {
-      items: equipment.items.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
-    })
+    updateEquipment(
+      equipment.id,
+      {
+        items: equipment.items.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+      },
+      `item:${itemId}:${Object.keys(patch).join(',')}`,
+    )
   }
 
   const reorderEquipment = (fromId: string, toId: string) => {
@@ -502,6 +691,7 @@ export function InspectionPage() {
   }
 
   const updateChrome = (patch: Partial<InspSheetChrome>) => {
+    pushFormHistory(`chrome:${Object.keys(patch).join(',')}`)
     setChrome((prev) => ({ ...prev, ...patch }))
     setChromeDirty(true)
     setSavedFlash(false)
@@ -519,6 +709,7 @@ export function InspectionPage() {
   const commitFormEdit = () => {
     persistCatalog()
     setFormEdit(false)
+    clearFormHistory()
     flashSaved()
   }
 
@@ -528,9 +719,37 @@ export function InspectionPage() {
     window.setTimeout(() => window.print(), 50)
   }
 
+  const saveAllRef = useRef(saveAll)
+  saveAllRef.current = saveAll
+  const commitFormEditRef = useRef(commitFormEdit)
+  commitFormEditRef.current = commitFormEdit
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      const key = event.key.toLowerCase()
+      if (key === 's') {
+        event.preventDefault()
+        if (formEditRef.current) commitFormEditRef.current()
+        else saveAllRef.current()
+        return
+      }
+      if (!formEditRef.current) return
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        undoForm()
+      } else if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault()
+        redoForm()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const toggleDayOk = (eq: Equipment, day: number) => {
     const date = `${monthPrefix}-${pad2(day)}`
-    setSelectedDate(date)
+    selectSingleDate(date)
     const record = findInspection(draftRef.current, eq.id, date)
     if (inspectionStatus(record) === 'issue') return
     applyDayMark(date, 'O', eq)
@@ -539,6 +758,7 @@ export function InspectionPage() {
   const startColResize = (id: InspColId, event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     event.stopPropagation()
+    if (formEditRef.current) resizeSnapRef.current = takeFormSnapshot()
     const table =
       event.currentTarget.closest('table.insp-sheet') ??
       document.querySelector<HTMLTableElement>('.insp-page .insp-sheet')
@@ -554,6 +774,7 @@ export function InspectionPage() {
   const startRowResize = (rowId: string, event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     event.stopPropagation()
+    if (formEditRef.current) resizeSnapRef.current = takeFormSnapshot()
     const table = event.currentTarget.closest('table.insp-sheet')
     const rowEl =
       table?.querySelector(`tr[data-row-id="${CSS.escape(rowId)}"]`) ??
@@ -718,42 +939,37 @@ export function InspectionPage() {
         <>
           <div className="chem-sheet-tools no-print">
             {formEdit ? (
-              <>
-                <div className="chem-form-bar">
-                  <span>
-                    {showAll
-                      ? '행·열 경계를 끌어 높이와 너비를 조절할 수 있습니다. 완료하면 모든 설비 양식에 적용됩니다.'
-                      : '점검 항목을 수정하고, 행·열 경계를 끌어 높이와 너비를 조절할 수 있습니다.'}
-                  </span>
-                  {showAll ? null : (
-                    <div className="chem-form-tools">
-                      <button
-                        className="secondary-btn"
-                        type="button"
-                        onClick={() => {
-                          if (!equipment) return
-                          updateEquipment(equipment.id, {
-                            items: [...equipment.items, createCheckItem(equipment.items)],
-                          })
-                        }}
-                      >
-                        <Plus size={14} />
-                        항목 추가
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="chem-sheet-tool-btns">
-                  <InspTipButton />
-                  <ComposeModeButton active={compose} onToggle={toggleCompose} />
-                  <button className="chem-doc-btn chem-doc-commit" type="button" onClick={commitFormEdit}>
-                    <TableProperties size={14} />
-                    양식 수정 완료
-                  </button>
-                </div>
-              </>
+              <div className="chem-sheet-tool-btns">
+                <ComposeModeButton active={compose} onToggle={toggleCompose} />
+                <button
+                  className="chem-doc-btn chem-doc-icon"
+                  type="button"
+                  aria-label="뒤로가기"
+                  disabled={!canUndo}
+                  onClick={undoForm}
+                >
+                  <Undo2 size={16} />
+                </button>
+                <button
+                  className="chem-doc-btn chem-doc-icon"
+                  type="button"
+                  aria-label="앞으로가기"
+                  disabled={!canRedo}
+                  onClick={redoForm}
+                >
+                  <Redo2 size={16} />
+                </button>
+                <button
+                  className={`chem-doc-btn${canUndo ? ' chem-doc-commit' : ''}`}
+                  type="button"
+                  onClick={commitFormEdit}
+                >
+                  <TableProperties size={14} />
+                  양식 수정 완료
+                </button>
+              </div>
             ) : (
-              <>
+              <div className="chem-sheet-tool-btns">
                 <InspTipButton />
                 <ComposeModeButton active={compose} onToggle={toggleCompose} />
                 <button
@@ -761,12 +977,32 @@ export function InspectionPage() {
                   type="button"
                   onClick={() => {
                     setTabEditMode(false)
+                    clearFormHistory()
                     setFormEdit(true)
                   }}
                 >
                   <TableProperties size={14} />
                   양식 수정
                 </button>
+                {showAll ? null : (
+                  <>
+                    <span className="insp-tool-split" aria-hidden="true" />
+                    <button className="chem-doc-btn" type="button" onClick={() => markSelectedDays('O')}>
+                      {dayActionLabel} 전체 <span className="insp-tip-ok">정상(O)</span>
+                    </button>
+                    <button className="chem-doc-btn" type="button" onClick={() => markSelectedDays('X')}>
+                      {dayActionLabel} 전체 <span className="insp-tip-bad">이상(X)</span>
+                    </button>
+                    <button className="chem-doc-btn" type="button" onClick={() => markSelectedDays('휴')}>
+                      {dayActionLabel} <span className="insp-tip-off">휴무(휴)</span>
+                    </button>
+                    <button className="chem-doc-btn insp-reset-btn" type="button" onClick={requestMonthReset}>
+                      <RotateCcw size={14} />
+                      전체 초기화
+                    </button>
+                  </>
+                )}
+                <span className="insp-tool-split" aria-hidden="true" />
                 <button
                   className={`chem-doc-btn chem-doc-save ${hasUnsaved ? 'is-dirty' : ''}`}
                   type="button"
@@ -775,25 +1011,11 @@ export function InspectionPage() {
                   <img src={diskette} alt="" />
                   {hasUnsaved ? '저장' : savedFlash ? '저장됨' : '저장'}
                 </button>
-                <button className="chem-doc-btn" type="button" onClick={printPage}>
+                <button className="chem-doc-btn insp-print-btn" type="button" onClick={printPage}>
                   <Printer size={14} />
                   {showAll ? '전체 인쇄' : '인쇄'}
                 </button>
-                {showAll ? null : (
-                  <>
-                    <button className="chem-doc-btn insp-fill-btn" type="button" onClick={markDayOk}>
-                      {dayActionLabel} 전체 O
-                    </button>
-                    <button className="chem-doc-btn" type="button" onClick={markDayOff}>
-                      {dayActionLabel} 휴무
-                    </button>
-                    <button className="chem-doc-btn" type="button" onClick={requestMonthReset}>
-                      <RotateCcw size={14} />
-                      전체 초기화
-                    </button>
-                  </>
-                )}
-              </>
+              </div>
             )}
           </div>
 
@@ -806,7 +1028,7 @@ export function InspectionPage() {
               days={days}
               monthPrefix={monthPrefix}
               today={today}
-              selectedDate={selectedDate}
+              selectedDates={selectedDates}
               inspectors={inspectors}
               inspectorByEquipment={inspectorByEquipment}
               inspectorWarnId={needInspectorId}
@@ -814,7 +1036,8 @@ export function InspectionPage() {
               formEdit={formEdit}
               printing={printing}
               sharedLayout={layout}
-              onSelectDate={setSelectedDate}
+              onSelectDate={selectSingleDate}
+              onDaySelectStart={startDaySelect}
               onToggleCell={toggleCell}
               onSaveReading={saveReading}
               onSaveFraction={saveFraction}
@@ -841,7 +1064,7 @@ export function InspectionPage() {
             days={days}
             monthPrefix={monthPrefix}
             today={today}
-            selectedDate={selectedDate}
+            selectedDates={selectedDates}
             inspectorName={inspectorByEquipment[equipment.id] ?? ''}
             inspectors={inspectors}
             inspectorWarn={needInspectorId === equipment.id}
@@ -851,7 +1074,8 @@ export function InspectionPage() {
             printing={printing}
             draggingItemId={draggingItemId}
             layout={layout}
-            onSelectDate={setSelectedDate}
+            onSelectDate={selectSingleDate}
+            onDaySelectStart={startDaySelect}
             onToggleCell={(day, itemNo) => toggleCell(equipment, day, itemNo)}
             onSaveReading={(day, item, value) => saveReading(equipment, day, item, value)}
             onSaveFraction={(day, item, reading, part, value) =>
@@ -885,19 +1109,19 @@ export function InspectionPage() {
             onRowResizeStart={startRowResize}
             onIssueNoteChange={(day, value) => {
               const date = `${monthPrefix}-${pad2(day)}`
-              setSelectedDate(date)
+              selectSingleDate(date)
               setIssueNote(value)
               persistDay(date, { issueNote: value }, equipment)
             }}
             onRequestDateChange={(day, value) => {
               const date = `${monthPrefix}-${pad2(day)}`
-              setSelectedDate(date)
+              selectSingleDate(date)
               setRequestDate(value)
               persistDay(date, { requestDate: value }, equipment)
             }}
             onConfirmDateChange={(day, value) => {
               const date = `${monthPrefix}-${pad2(day)}`
-              setSelectedDate(date)
+              selectSingleDate(date)
               setConfirmDate(value)
               persistDay(date, { confirmDate: value }, equipment)
             }}

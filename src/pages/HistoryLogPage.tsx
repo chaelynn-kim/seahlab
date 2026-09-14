@@ -9,30 +9,47 @@ import type { ActivityAction } from '../types'
 export function HistoryLogPage() {
   const { logs, deleteLog, refreshLogs } = useAppData()
   const [action, setAction] = useState<'전체' | ActivityAction>('전체')
-  const [query, setQuery] = useState('')
+  const [userKey, setUserKey] = useState('전체')
 
   useEffect(() => {
     refreshLogs()
   }, [refreshLogs])
 
+  const users = useMemo(() => {
+    const map = new Map<string, { name: string; email: string }>()
+    for (const item of logs) {
+      const email = item.user.email.trim()
+      const key = email && email !== '-' ? email.toLowerCase() : `name:${item.user.name}`
+      if (map.has(key)) continue
+      map.set(key, { name: item.user.name, email: email || '-' })
+    }
+    return [...map.entries()]
+      .map(([key, user]) => ({ key, ...user }))
+      .sort((left, right) => left.email.localeCompare(right.email, 'ko'))
+  }, [logs])
+
+  useEffect(() => {
+    if (userKey === '전체') return
+    if (users.some((user) => user.key === userKey)) return
+    setUserKey('전체')
+  }, [userKey, users])
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
     return logs.filter((item) => {
       const actionOk = action === '전체' || item.action === action
-      const userOk =
-        !q ||
-        item.user.email.toLowerCase().includes(q) ||
-        item.user.name.toLowerCase().includes(q)
-      return actionOk && userOk
+      if (userKey === '전체') return actionOk
+      const email = item.user.email.trim()
+      const key = email && email !== '-' ? email.toLowerCase() : `name:${item.user.name}`
+      return actionOk && key === userKey
     })
-  }, [logs, action, query])
+  }, [logs, action, userKey])
 
   return (
     <section>
       <PageHead
         icon={History}
         title="이력 로그"
-        description="기능 이용 이력을 기록·조회합니다. (최근 300건 · 탭 이동 제외)"
+        description="웹의 이용 이력을 기록·조회합니다. (최근 300건 · 탭 이동 제외 · 담당자만 확인 가능)"
       />
 
       <div className="log-filter">
@@ -53,11 +70,18 @@ export function HistoryLogPage() {
         </label>
         <label className="log-filter-field log-filter-search">
           <span>사용자</span>
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="사용자 이메일 검색"
-          />
+          <select
+            className="log-filter-select"
+            value={userKey}
+            onChange={(event) => setUserKey(event.target.value)}
+          >
+            <option value="전체">전체</option>
+            {users.map((user) => (
+              <option key={user.key} value={user.key}>
+                {user.email !== '-' ? `${user.name} (${user.email})` : user.name}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="log-filter-aside">
           <button className="secondary-btn" type="button" onClick={refreshLogs}>
@@ -95,7 +119,7 @@ export function HistoryLogPage() {
                 <td>
                   <div className="user-cell">
                     <strong>{item.user.name}</strong>
-                    <span>{item.user.department}</span>
+                    <span>{item.user.email}</span>
                   </div>
                 </td>
                 <td>

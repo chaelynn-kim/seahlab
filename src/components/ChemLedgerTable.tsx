@@ -1,11 +1,19 @@
-import type { MouseEvent } from 'react'
-import { useEffect } from 'react'
+import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import type { ChemicalLedgerRow } from '../types'
 import {
+  CHEM_BODY_ROW_KEY,
   HEADER_ROW_IDS,
+  chemBlockCell,
+  chemBodyCell,
+  chemLeafCell,
+  chemSectionCell,
   isBizNoHeader,
   isDateColumn,
+  parseChemBodyCell,
+  resolveChemCellFont,
+  type ChemColGroup,
   type ChemFormColumn,
   type HeaderChunk,
   type HeaderRowId,
@@ -21,10 +29,12 @@ function HeaderNameInput({
   value,
   onChange,
   locked = false,
+  onActivate,
 }: {
   value: string
   onChange: (value: string) => void
   locked?: boolean
+  onActivate?: () => void
 }) {
   const lines = Math.max(1, value.split('\n').length)
   return (
@@ -37,6 +47,7 @@ function HeaderNameInput({
       tabIndex={locked ? -1 : 0}
       onMouseDown={(event) => {
         if (locked) return
+        onActivate?.()
         event.stopPropagation()
       }}
       onClick={(event) => {
@@ -47,6 +58,7 @@ function HeaderNameInput({
           event.currentTarget.blur()
           return
         }
+        onActivate?.()
         event.currentTarget.select()
       }}
       onChange={(event) => onChange(event.target.value)}
@@ -68,7 +80,7 @@ function HeaderLines({ text }: { text: string }) {
   )
 }
 
-function ColHandle({
+export function ColHandle({
   onResizeStart,
 }: {
   onResizeStart: (event: MouseEvent<HTMLButtonElement>) => void
@@ -83,14 +95,16 @@ function ColHandle({
   )
 }
 
-function RowHandle({
+export function RowHandle({
   onResizeStart,
+  className,
 }: {
   onResizeStart: (event: MouseEvent<HTMLButtonElement>) => void
+  className?: string
 }) {
   return (
     <button
-      className="chem-row-handle no-print"
+      className={`chem-row-handle no-print${className ? ` ${className}` : ''}`}
       type="button"
       aria-label="행 높이 조절"
       onMouseDown={onResizeStart}
@@ -99,6 +113,57 @@ function RowHandle({
 }
 
 export type ChemFormAction = 'col-add' | 'col-del' | 'row-add' | 'row-del' | null
+
+function isHandleTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(
+    target.closest('.chem-col-handle, .chem-row-handle, .chem-meta-split, .chem-row-tools, .icon-btn'),
+  )
+}
+
+function cellFontStyle(
+  fonts: Record<string, number>,
+  cellId: string,
+  extra?: CSSProperties,
+): CSSProperties | undefined {
+  const size = resolveChemCellFont(fonts, cellId)
+  if (size == null) return extra
+  return { ...extra, fontSize: `${size}px` }
+}
+
+interface ChemCellInteract {
+  selectedIds: string[]
+  fonts: Record<string, number>
+  enabled: boolean
+  onPointerDown: (cellId: string) => void
+}
+
+function cellProps(
+  interact: ChemCellInteract | undefined,
+  cellId: string,
+  extraClass?: string,
+  extraStyle?: CSSProperties,
+) {
+  const fonts = interact?.fonts ?? {}
+  const sized = resolveChemCellFont(fonts, cellId) != null
+  const selected = Boolean(interact?.selectedIds.includes(cellId))
+  return {
+    'data-cell-id': cellId,
+    className: cx(extraClass, selected && 'is-cell-on', sized && 'is-cell-font'),
+    style: cellFontStyle(fonts, cellId, extraStyle),
+    onPointerDown: interact?.enabled
+      ? (event: ReactPointerEvent<HTMLElement>) => {
+          if (isHandleTarget(event.target)) return
+          if (event.button !== 0) return
+          const target = event.target
+          const onField =
+            target instanceof Element &&
+            Boolean(target.closest('input, textarea, button, select'))
+          if (!onField) event.preventDefault()
+          interact.onPointerDown(cellId)
+        }
+      : undefined,
+  }
+}
 
 function pickColProps(
   formAction: ChemFormAction,
@@ -175,10 +240,12 @@ function cellValue(row: ChemicalLedgerRow, column: ChemFormColumn): string {
 function SectionHeads({
   title,
   cols,
+  group,
   formEdit,
   formAction,
   canDeleteCol,
   style,
+  interact,
   onResizeStart,
   onRowResizeStart,
   onInsertCol,
@@ -187,10 +254,12 @@ function SectionHeads({
 }: {
   title: string
   cols: ChemFormColumn[]
+  group: ChemColGroup
   formEdit: boolean
   formAction: ChemFormAction
   canDeleteCol: boolean
   style?: { height: number; minHeight: number; maxHeight: number }
+  interact?: ChemCellInteract
   onResizeStart: (id: string, event: MouseEvent<HTMLButtonElement>) => void
   onRowResizeStart: (rowId: string, event: MouseEvent<HTMLButtonElement>) => void
   onInsertCol: (afterId: string) => void
@@ -200,17 +269,18 @@ function SectionHeads({
   if (cols.length === 0) return null
   const last = cols[cols.length - 1]
   const pick = pickColProps(formAction, last.id, onInsertCol, onDeleteCol)
+  const cellId = chemSectionCell(group)
   return (
     <th
       colSpan={cols.length}
-      className={cx(formEdit && 'chem-th-edit', pick.className)}
-      style={style}
+      {...cellProps(interact, cellId, cx(formEdit && 'chem-th-edit', pick.className), style)}
       onClick={pick.onClick}
     >
       {formEdit ? (
         <HeaderNameInput
           value={title}
           locked={Boolean(pick.className)}
+          onActivate={() => interact?.onPointerDown(cellId)}
           onChange={onRenameTitle}
         />
       ) : (
@@ -237,6 +307,7 @@ function BlockRow({
   bandStyle,
   span2Style,
   flashColId,
+  interact,
   onResizeStart,
   onRowResizeStart,
   onInsertCol,
@@ -251,6 +322,7 @@ function BlockRow({
   bandStyle?: { height: number; minHeight: number; maxHeight: number }
   span2Style?: { height: number; minHeight: number; maxHeight: number }
   flashColId?: string | null
+  interact?: ChemCellInteract
   onResizeStart: (id: string, event: MouseEvent<HTMLButtonElement>) => void
   onRowResizeStart: (rowId: string, event: MouseEvent<HTMLButtonElement>) => void
   onInsertCol: (afterId: string) => void
@@ -264,19 +336,25 @@ function BlockRow({
         if (chunk.type === 'span2') {
           const col = chunk.cols[0]
           const pick = pickColProps(formAction, col.id, onInsertCol, onDeleteCol)
+          const cellId = chemLeafCell(col.id)
           return (
             <th
               key={col.id}
               rowSpan={2}
               data-col-id={col.id}
-              className={cx(formEdit && 'chem-th-edit', flashColId === col.id && 'is-flash', pick.className)}
-              style={span2Style}
+              {...cellProps(
+                interact,
+                cellId,
+                cx(formEdit && 'chem-th-edit', flashColId === col.id && 'is-flash', pick.className),
+                span2Style,
+              )}
               onClick={pick.onClick}
             >
               {formEdit ? (
                 <HeaderNameInput
                   value={col.label}
                   locked={Boolean(pick.className)}
+                  onActivate={() => interact?.onPointerDown(cellId)}
                   onChange={(value) => onRename(col.id, value)}
                 />
               ) : (
@@ -296,18 +374,19 @@ function BlockRow({
         }
         const last = chunk.cols[chunk.cols.length - 1]
         const pick = last ? pickColProps(formAction, last.id, onInsertCol, onDeleteCol) : {}
+        const cellId = chemBlockCell(chunk.cols[0]?.id ?? chunk.block ?? 'block')
         return (
           <th
             key={chunk.cols[0]?.id ?? chunk.block}
             colSpan={chunk.cols.length}
-            className={cx(formEdit && 'chem-th-edit', pick.className)}
-            style={bandStyle}
+            {...cellProps(interact, cellId, cx(formEdit && 'chem-th-edit', pick.className), bandStyle)}
             onClick={pick.onClick}
           >
             {formEdit ? (
               <HeaderNameInput
                 value={chunk.block ?? ''}
                 locked={Boolean(pick.className)}
+                onActivate={() => interact?.onPointerDown(cellId)}
                 onChange={(value) => {
                   if (last) onRenameBlock(last.id, value)
                 }}
@@ -340,6 +419,7 @@ function LeafRow({
   canDeleteCol,
   style,
   flashColId,
+  interact,
   onResizeStart,
   onRowResizeStart,
   onInsertCol,
@@ -352,6 +432,7 @@ function LeafRow({
   canDeleteCol: boolean
   style?: { height: number; minHeight: number; maxHeight: number }
   flashColId?: string | null
+  interact?: ChemCellInteract
   onResizeStart: (id: string, event: MouseEvent<HTMLButtonElement>) => void
   onRowResizeStart: (rowId: string, event: MouseEvent<HTMLButtonElement>) => void
   onInsertCol: (afterId: string) => void
@@ -365,23 +446,29 @@ function LeafRow({
         .flatMap((chunk) => chunk.cols)
         .map((col) => {
           const pick = pickColProps(formAction, col.id, onInsertCol, onDeleteCol)
+          const cellId = chemLeafCell(col.id)
           return (
             <th
               key={col.id}
               data-col-id={col.id}
-              className={cx(
-                formEdit && 'chem-th-edit',
-                isBizNoHeader(col) && 'chem-th-biz',
-                flashColId === col.id && 'is-flash',
-                pick.className,
+              {...cellProps(
+                interact,
+                cellId,
+                cx(
+                  formEdit && 'chem-th-edit',
+                  isBizNoHeader(col) && 'chem-th-biz',
+                  flashColId === col.id && 'is-flash',
+                  pick.className,
+                ),
+                style,
               )}
-              style={style}
               onClick={pick.onClick}
             >
               {formEdit ? (
                 <HeaderNameInput
                   value={col.label}
                   locked={Boolean(pick.className)}
+                  onActivate={() => interact?.onPointerDown(cellId)}
                   onChange={(value) => onRename(col.id, value)}
                 />
               ) : (
@@ -427,6 +514,9 @@ interface ChemLedgerTableProps {
   flashColId?: string | null
   flashRowId?: string | null
   fillRowHeight?: number | null
+  cellFonts?: Record<string, number>
+  selectedCellIds?: string[]
+  onSelectCells?: (ids: string[]) => void
 }
 
 export function ChemLedgerTable({
@@ -453,6 +543,9 @@ export function ChemLedgerTable({
   flashColId,
   flashRowId,
   fillRowHeight,
+  cellFonts = {},
+  selectedCellIds = [],
+  onSelectCells,
 }: ChemLedgerTableProps) {
   const inCols = columns.filter((item) => item.group === 'in')
   const outCols = columns.filter((item) => item.group === 'out')
@@ -467,6 +560,83 @@ export function ChemLedgerTable({
   const leafStyle = headerBandStyle(rowHeights, 'thead-leaf', 1)
   const span2Style = headerBandStyle(rowHeights, 'thead-block', 2)
   const endStyle = headerBandStyle(rowHeights, 'thead-section', 3)
+  const selectAnchor = useRef<string | null>(null)
+  const selecting = useRef(false)
+  const interact: ChemCellInteract = {
+    selectedIds: formEdit ? selectedCellIds : [],
+    fonts: cellFonts,
+    enabled: formEdit && !formAction,
+    onPointerDown: (cellId) => {
+      if (!formEdit || formAction || !onSelectCells) return
+      selecting.current = true
+      selectAnchor.current = cellId
+      onSelectCells([cellId])
+      document.body.classList.add('chem-selecting-cells')
+    },
+  }
+
+  useEffect(() => {
+    if (!formEdit) return
+    const expand = (anchor: string, current: string) => {
+      if (anchor === current) return [anchor]
+      const a = parseChemBodyCell(anchor)
+      const b = parseChemBodyCell(current)
+      if (a && b) {
+        const r0 = rows.findIndex((row) => row.id === a.rowId)
+        const r1 = rows.findIndex((row) => row.id === b.rowId)
+        const c0 = columns.findIndex((col) => col.id === a.colId)
+        const c1 = columns.findIndex((col) => col.id === b.colId)
+        if (r0 < 0 || r1 < 0 || c0 < 0 || c1 < 0) return [anchor, current]
+        const rMin = Math.min(r0, r1)
+        const rMax = Math.max(r0, r1)
+        const cMin = Math.min(c0, c1)
+        const cMax = Math.max(c0, c1)
+        const ids: string[] = []
+        for (let rowIndex = rMin; rowIndex <= rMax; rowIndex += 1) {
+          for (let colIndex = cMin; colIndex <= cMax; colIndex += 1) {
+            ids.push(chemBodyCell(rows[rowIndex].id, columns[colIndex].id))
+          }
+        }
+        return ids
+      }
+      const headerPrefix =
+        anchor.startsWith('thead-leaf:') && current.startsWith('thead-leaf:')
+          ? 'thead-leaf:'
+          : anchor.startsWith('thead-block:') && current.startsWith('thead-block:')
+            ? 'thead-block:'
+            : null
+      if (headerPrefix) {
+        const c0 = columns.findIndex((col) => col.id === anchor.slice(headerPrefix.length))
+        const c1 = columns.findIndex((col) => col.id === current.slice(headerPrefix.length))
+        if (c0 < 0 || c1 < 0) return [anchor, current]
+        const cMin = Math.min(c0, c1)
+        const cMax = Math.max(c0, c1)
+        const makeId = headerPrefix === 'thead-leaf:' ? chemLeafCell : chemBlockCell
+        return columns.slice(cMin, cMax + 1).map((col) => makeId(col.id))
+      }
+      return [anchor, current]
+    }
+    const onMove = (event: PointerEvent) => {
+      if (!selecting.current || !selectAnchor.current || !onSelectCells || formAction) return
+      const node = document.elementFromPoint(event.clientX, event.clientY)
+      const cell = node instanceof Element ? node.closest('[data-cell-id]') : null
+      const id = cell?.getAttribute('data-cell-id')
+      if (!id) return
+      onSelectCells(expand(selectAnchor.current, id))
+    }
+    const onUp = () => {
+      selecting.current = false
+      selectAnchor.current = null
+      document.body.classList.remove('chem-selecting-cells')
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.classList.remove('chem-selecting-cells')
+    }
+  }, [formEdit, formAction, columns, rows, onSelectCells])
 
   useEffect(() => {
     if (!formEdit || !flashColId) return
@@ -523,10 +693,12 @@ export function ChemLedgerTable({
           <SectionHeads
             title={inSection}
             cols={inCols}
+            group="in"
             formEdit={formEdit}
             formAction={formAction}
             canDeleteCol={canDeleteCol}
             style={sectionStyle}
+            interact={interact}
             onResizeStart={onResizeStart}
             onRowResizeStart={onRowResizeStart}
             onInsertCol={onInsertCol}
@@ -536,10 +708,12 @@ export function ChemLedgerTable({
           <SectionHeads
             title={outSection}
             cols={outCols}
+            group="out"
             formEdit={formEdit}
             formAction={formAction}
             canDeleteCol={canDeleteCol}
             style={sectionStyle}
+            interact={interact}
             onResizeStart={onResizeStart}
             onRowResizeStart={onRowResizeStart}
             onInsertCol={onInsertCol}
@@ -548,19 +722,25 @@ export function ChemLedgerTable({
           />
           {endCols.map((col) => {
             const pick = pickColProps(formAction, col.id, onInsertCol, onDeleteCol)
+            const cellId = chemLeafCell(col.id)
             return (
               <th
                 key={col.id}
                 rowSpan={3}
                 data-col-id={col.id}
-                className={cx(formEdit && 'chem-th-edit', flashColId === col.id && 'is-flash', pick.className)}
-                style={endStyle}
+                {...cellProps(
+                  interact,
+                  cellId,
+                  cx(formEdit && 'chem-th-edit', flashColId === col.id && 'is-flash', pick.className),
+                  endStyle,
+                )}
                 onClick={pick.onClick}
               >
                 {formEdit ? (
                   <HeaderNameInput
                     value={col.label}
                     locked={Boolean(pick.className)}
+                    onActivate={() => interact?.onPointerDown(cellId)}
                     onChange={(value) => onRename(col.id, value)}
                   />
                 ) : (
@@ -592,6 +772,7 @@ export function ChemLedgerTable({
             bandStyle={blockStyle}
             span2Style={span2Style}
             flashColId={flashColId}
+            interact={interact}
             onResizeStart={onResizeStart}
             onRowResizeStart={onRowResizeStart}
             onInsertCol={onInsertCol}
@@ -607,6 +788,7 @@ export function ChemLedgerTable({
             bandStyle={blockStyle}
             span2Style={span2Style}
             flashColId={flashColId}
+            interact={interact}
             onResizeStart={onResizeStart}
             onRowResizeStart={onRowResizeStart}
             onInsertCol={onInsertCol}
@@ -627,6 +809,7 @@ export function ChemLedgerTable({
             canDeleteCol={canDeleteCol}
             style={leafStyle}
             flashColId={flashColId}
+            interact={interact}
             onResizeStart={onResizeStart}
             onRowResizeStart={onRowResizeStart}
             onInsertCol={onInsertCol}
@@ -640,6 +823,7 @@ export function ChemLedgerTable({
             canDeleteCol={canDeleteCol}
             style={leafStyle}
             flashColId={flashColId}
+            interact={interact}
             onResizeStart={onResizeStart}
             onRowResizeStart={onRowResizeStart}
             onInsertCol={onInsertCol}
@@ -650,8 +834,13 @@ export function ChemLedgerTable({
       </thead>
       <tbody>
         {rows.map((row) => {
-          const rowH = rowHeights[row.id] ?? fillRowHeight ?? undefined
-          const cellStyle = rowH ? { minHeight: rowH } : undefined
+          const savedBody = rowHeights[CHEM_BODY_ROW_KEY]
+          const rowH = savedBody ?? fillRowHeight ?? undefined
+          const cellStyle = rowH
+            ? savedBody
+              ? { height: rowH, minHeight: rowH, maxHeight: rowH }
+              : { minHeight: rowH }
+            : undefined
           return (
             <tr
               key={row.id}
@@ -686,12 +875,18 @@ export function ChemLedgerTable({
                   <RowHandle onResizeStart={(event) => onRowResizeStart(row.id, event)} />
                 </td>
               ) : null}
-              {columns.map((col) => (
+              {columns.map((col) => {
+                const cellId = chemBodyCell(row.id, col.id)
+                return (
                 <td
                   key={col.id}
                   data-col-id={col.id}
-                  className={flashColId === col.id ? 'is-flash' : undefined}
-                  style={cellStyle}
+                  {...cellProps(
+                    interact,
+                    cellId,
+                    flashColId === col.id ? 'is-flash' : undefined,
+                    cellStyle,
+                  )}
                 >
                   {col.kind === 'qty' ? (
                     <QtyField
@@ -715,9 +910,15 @@ export function ChemLedgerTable({
                       onChange={(value) => onUpdateCell(row.id, col, value)}
                     />
                   )}
-                  {formEdit ? <RowHandle onResizeStart={(event) => onRowResizeStart(row.id, event)} /> : null}
+                  {formEdit ? (
+                    <>
+                      <ColHandle onResizeStart={(event) => onResizeStart(col.id, event)} />
+                      <RowHandle onResizeStart={(event) => onRowResizeStart(row.id, event)} />
+                    </>
+                  ) : null}
                 </td>
-              ))}
+                )
+              })}
             </tr>
           )
         })}
@@ -730,10 +931,16 @@ export function ChemFormEditBar({
   action,
   onAction,
   layoutOnly = false,
+  selectedFont,
+  canFont,
+  onFont,
 }: {
   action: ChemFormAction
   onAction: (next: ChemFormAction) => void
   layoutOnly?: boolean
+  selectedFont?: number | null
+  canFont?: boolean
+  onFont?: (delta: number) => void
 }) {
   const toggle = (next: Exclude<ChemFormAction, null>) => {
     onAction(action === next ? null : next)
@@ -748,8 +955,8 @@ export function ChemFormEditBar({
           : action === 'row-del'
             ? '왼쪽 − 를 눌러 해당 행을 삭제하세요.'
             : layoutOnly
-              ? '열·행·머리글을 수정하면 모든 물질 양식에 적용됩니다.'
-              : '이 물질의 양식만 수정됩니다. 각 행과 열을 드래그하여 수정하거나 추가할 수 있습니다.'
+              ? '칸을 누르거나 드래그해 선택한 뒤, 글자 크기를 조절할 수 있습니다. 모든 물질 양식에 적용됩니다.'
+              : '칸을 누르거나 드래그해 선택한 뒤, 글자 크기를 조절할 수 있습니다.'
 
   return (
     <div className="chem-form-bar no-print">
@@ -791,6 +998,30 @@ export function ChemFormEditBar({
           >
             <Minus size={14} />
             행 삭제
+          </button>
+        </div>
+        <div className="chem-form-tool-group">
+          <strong>글자</strong>
+          <button
+            className="secondary-btn"
+            type="button"
+            aria-label="글자 작게"
+            disabled={!canFont}
+            onClick={() => onFont?.(-1)}
+          >
+            <Minus size={14} />
+          </button>
+          <span className={`chem-font-size${canFont ? '' : ' is-off'}`}>
+            {canFont && selectedFont != null ? `${selectedFont}px` : '칸 선택'}
+          </span>
+          <button
+            className="secondary-btn"
+            type="button"
+            aria-label="글자 크게"
+            disabled={!canFont}
+            onClick={() => onFont?.(1)}
+          >
+            <Plus size={14} />
           </button>
         </div>
       </div>

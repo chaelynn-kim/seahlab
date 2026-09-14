@@ -1,7 +1,10 @@
 node_modules
 dist
+.firebase
 .DS_Store
 *.local
+firebase-debug.log
+*.cache
 form.xlsx
 .tmp-xlsx
 .tmp-xlsx.zip

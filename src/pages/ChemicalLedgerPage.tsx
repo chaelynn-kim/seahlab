@@ -1,20 +1,34 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { Calendar, ChevronLeft, ChevronRight, FlaskConical, Pencil, Plus, Printer, Redo2, TableProperties, Undo2, X } from 'lucide-react'
+import { Calendar, ChevronLeft, ChevronRight, FlaskConical, Pencil, Plus, Printer, Redo2, RotateCcw, TableProperties, Undo2, X } from 'lucide-react'
 import { PageHead } from '../components/layout/PageHead'
 import { ComposeModeButton } from '../components/ComposeModeButton'
 import diskette from '../assets/diskette.png'
-import { ChemLedgerAllView, ChemLedgerSheet, ALL_TAB_ID, PRINT_PAGE_HEIGHT_MM } from '../components/ChemLedgerSheet'
+import {
+  ChemLedgerAllView,
+  ChemLedgerSheet,
+  ALL_TAB_ID,
+  chunkLedgerRows,
+} from '../components/ChemLedgerSheet'
 import { ChemFormEditBar, type ChemFormAction } from '../components/ChemLedgerTable'
 import { useAppData } from '../context/AppDataContext'
 import { useComposeMode } from '../lib/composeMode'
 import {
+  CHEM_BODY_ROW_KEY,
+  CHROME_META_LEFT,
+  clampChemCellFont,
   createChemColumn,
+  defaultChemCellFont,
+  isChemHeaderRowId,
+  resolveChemCellFont,
+  keepLayoutHeights,
+  loadChemCellFonts,
   loadChemFormColumns,
   loadChemSheetChrome,
   loadHeaderRowHeights,
   migrateChemFormLayout,
   normalizeColumns,
   removeChemFormLayout,
+  saveChemCellFonts,
   saveChemFormColumns,
   saveChemFormLayoutAll,
   saveChemSheetChrome,
@@ -28,6 +42,7 @@ import {
   createLedgerRow,
   ensureLedgerYear,
   ledgerCalendarYear,
+  LEDGER_ROW_COUNT,
 } from '../lib/chemicals'
 import type {
   ChemicalActivities,
@@ -57,6 +72,7 @@ interface FormSnapshot {
   rowHeights: Record<string, number>
   editRowLock: Record<string, number>
   chrome: ChemSheetChrome
+  cellFonts: Record<string, number>
   rows: ChemicalLedgerRow[]
   yearRows: Record<string, ChemicalLedgerRow[]>
   meta: ChemicalLedgerMeta
@@ -78,7 +94,7 @@ const EMPTY_META: ChemicalLedgerMeta = {
 }
 
 function keepHeaderHeights(prev: Record<string, number>): Record<string, number> {
-  return Object.fromEntries(Object.entries(prev).filter(([id]) => id.startsWith('thead-')))
+  return Object.fromEntries(Object.entries(prev).filter(([id]) => isChemHeaderRowId(id)))
 }
 
 export function ChemicalLedgerPage() {
@@ -93,6 +109,7 @@ export function ChemicalLedgerPage() {
   const [saved, setSaved] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [pendingReset, setPendingReset] = useState(false)
   const [tabEditMode, setTabEditMode] = useState(false)
   const dragTabId = useRef<string | null>(null)
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
@@ -108,6 +125,8 @@ export function ChemicalLedgerPage() {
     loadHeaderRowHeights(ledgers[0]?.id ?? ''),
   )
   const [chrome, setChrome] = useState<ChemSheetChrome>(() => loadChemSheetChrome(ledgers[0]?.id ?? ''))
+  const [cellFonts, setCellFonts] = useState<Record<string, number>>(() => loadChemCellFonts(ledgers[0]?.id ?? ''))
+  const [selectedCellIds, setSelectedCellIds] = useState<string[]>([])
   const [editRowLock, setEditRowLock] = useState<Record<string, number>>({})
   const [colPx, setColPx] = useState<Record<string, number>>({})
   const [flashColId, setFlashColId] = useState<string | null>(null)
@@ -117,10 +136,19 @@ export function ChemicalLedgerPage() {
   const [canRedo, setCanRedo] = useState(false)
   const tableWrapRef = useRef<HTMLDivElement>(null)
   const sheetRef = useRef<HTMLFormElement>(null)
-  const [pageGuideCount, setPageGuideCount] = useState(0)
+  const [rowChunks, setRowChunks] = useState<{ start: number; end: number }[]>([])
+  const [printing, setPrinting] = useState(false)
   const measureBodyRef = useRef<() => void>(() => {})
   const rowCountRef = useRef(1)
-  const colDrag = useRef<{ id: string; startX: number; startPx: number } | null>(null)
+  const fillRowHeightRef = useRef<number | null>(null)
+  const rowHeightsRef = useRef(rowHeights)
+  const colDrag = useRef<{
+    id: string
+    startX: number
+    startPx: number
+    kind?: 'meta-split'
+    grid?: HTMLElement
+  } | null>(null)
   const rowDrag = useRef<{ id: string; startY: number; startH: number } | null>(null)
   const historyRef = useRef<{ past: FormSnapshot[]; future: FormSnapshot[] }>({ past: [], future: [] })
   const lastHistorySourceRef = useRef<string | null>(null)
@@ -134,6 +162,7 @@ export function ChemicalLedgerPage() {
     rowHeights,
     editRowLock,
     chrome,
+    cellFonts,
     rows: [],
     yearRows: {},
     meta: EMPTY_META,
@@ -145,6 +174,14 @@ export function ChemicalLedgerPage() {
     if (selectedId === ALL_TAB_ID) return null
     return ledgers.find((item) => item.id === selectedId) ?? ledgers[0]
   }, [ledgers, selectedId])
+  const displayChunks = useMemo(() => {
+    const count = selected?.rows.length ?? 0
+    if (!count) return [{ start: 0, end: 0 }]
+    if (!rowChunks.length) return [{ start: 0, end: count }]
+    return rowChunks
+      .map((chunk) => ({ start: chunk.start, end: Math.min(chunk.end, count) }))
+      .filter((chunk) => chunk.start < count)
+  }, [rowChunks, selected?.rows.length])
   const yearChoices = useMemo(() => {
     const current = ledgerCalendarYear()
     const stored = Object.keys(yearBook)
@@ -164,6 +201,7 @@ export function ChemicalLedgerPage() {
     rowHeights,
     editRowLock,
     chrome,
+    cellFonts,
     rows: selected?.rows ?? [],
     yearRows: Object.fromEntries(ledgers.map((item) => [item.id, item.rows])),
     meta: selected?.meta ?? EMPTY_META,
@@ -171,6 +209,8 @@ export function ChemicalLedgerPage() {
   }
   const formEditRef = useRef(formEdit)
   formEditRef.current = formEdit
+  fillRowHeightRef.current = fillRowHeight
+  rowHeightsRef.current = rowHeights
   const ledgersRef = useRef(ledgers)
   ledgersRef.current = ledgers
 
@@ -227,6 +267,7 @@ export function ChemicalLedgerPage() {
       rowHeights: { ...current.rowHeights },
       editRowLock: { ...current.editRowLock },
       chrome: { ...current.chrome },
+      cellFonts: { ...current.cellFonts },
       rows: cloneJson(current.rows),
       yearRows: cloneJson(current.yearRows),
       meta: cloneJson(current.meta),
@@ -269,6 +310,7 @@ export function ChemicalLedgerPage() {
     setRowHeights(snap.rowHeights)
     setEditRowLock(snap.editRowLock)
     setChrome(snap.chrome)
+    setCellFonts(snap.cellFonts)
     if (!formEditRef.current) {
       if (id === ALL_TAB_ID) {
         saveChemFormLayoutAll(
@@ -276,11 +318,13 @@ export function ChemicalLedgerPage() {
           saved,
           snap.chrome,
           snap.rowHeights,
+          snap.cellFonts,
         )
       } else if (id) {
         saveChemFormColumns(saved, id)
         saveHeaderRowHeights(snap.rowHeights, id)
         saveChemSheetChrome(snap.chrome, id)
+        saveChemCellFonts(snap.cellFonts, id)
       }
     }
     if (id === ALL_TAB_ID) {
@@ -337,27 +381,32 @@ export function ChemicalLedgerPage() {
       setFlashColId(null)
       setFlashRowId(null)
       setFormAction(null)
+      setSelectedCellIds([])
     }
     return () => document.body.classList.remove('chem-form-edit')
   }, [formEdit])
 
   useLayoutEffect(() => {
-    if (!formEdit || showAll) {
-      setPageGuideCount(0)
+    if (showAll) {
+      setRowChunks([])
       return
     }
     const sheet = sheetRef.current
-    if (!sheet) return
+    if (!sheet || !selected) return
     const update = () => {
-      const pagePx = (PRINT_PAGE_HEIGHT_MM * 96) / 25.4
-      const next = Math.max(0, Math.floor((sheet.scrollHeight - 8) / pagePx))
-      setPageGuideCount(next)
+      const next = chunkLedgerRows(sheet, selected.rows.length)
+      setRowChunks((prev) =>
+        prev.length === next.length &&
+        prev.every((chunk, index) => chunk.start === next[index].start && chunk.end === next[index].end)
+          ? prev
+          : next,
+      )
     }
     update()
     const observer = new ResizeObserver(update)
     observer.observe(sheet)
     return () => observer.disconnect()
-  }, [formEdit, showAll, fillRowHeight, selected?.rows.length, columns, chrome, rowHeights])
+  }, [showAll, fillRowHeight, selected?.id, selected?.rows.length, columns, chrome, rowHeights, formEdit])
 
   useEffect(() => {
     const seedId = selectedId === ALL_TAB_ID ? ledgersRef.current[0]?.id ?? '' : selectedId
@@ -366,6 +415,8 @@ export function ChemicalLedgerPage() {
     setColumns(loadChemFormColumns(seedId))
     setRowHeights(loadHeaderRowHeights(seedId))
     setChrome(loadChemSheetChrome(seedId))
+    setCellFonts(loadChemCellFonts(seedId))
+    setSelectedCellIds([])
     setColPx({})
     setEditRowLock({})
     setFormEdit(false)
@@ -394,6 +445,7 @@ export function ChemicalLedgerPage() {
   const measureBodyRows = () => {
     if (showAll) return
     if (document.body.classList.contains('chem-printing')) return
+    if (rowHeightsRef.current[CHEM_BODY_ROW_KEY] != null) return
     const wrap = tableWrapRef.current
     if (!wrap) return
     const wrapH = wrap.clientHeight
@@ -423,9 +475,13 @@ export function ChemicalLedgerPage() {
       })
     })
     observer.observe(wrap)
-    const onBeforePrint = () => document.body.classList.add('chem-printing')
+    const onBeforePrint = () => {
+      document.body.classList.add('chem-printing')
+      setPrinting(true)
+    }
     const onAfterPrint = () => {
       document.body.classList.remove('chem-printing')
+      setPrinting(false)
       measureBodyRef.current()
     }
     window.addEventListener('beforeprint', onBeforePrint)
@@ -441,6 +497,7 @@ export function ChemicalLedgerPage() {
 
   useLayoutEffect(() => {
     if (showAll) return
+    if (rowHeightsRef.current[CHEM_BODY_ROW_KEY] != null) return
     const wrap = tableWrapRef.current
     const table = wrap?.querySelector('table')
     if (!wrap || !table || fillRowHeight == null) return
@@ -457,31 +514,49 @@ export function ChemicalLedgerPage() {
   useEffect(() => {
     const onMove = (event: globalThis.MouseEvent) => {
       if (colDrag.current) {
-        const width = Math.max(28, colDrag.current.startPx + (event.clientX - colDrag.current.startX))
-        const id = colDrag.current.id
-        setColPx((prev) => ({ ...prev, [id]: width }))
+        if (colDrag.current.kind === 'meta-split') {
+          const grid = colDrag.current.grid
+          if (grid) {
+            const rect = grid.getBoundingClientRect()
+            const pct = Math.min(72, Math.max(28, ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 100))
+            setChrome((prev) =>
+              Math.abs(prev.metaLeftPct - pct) < 0.15 ? prev : { ...prev, metaLeftPct: pct },
+            )
+          }
+        } else {
+          const width = Math.max(28, colDrag.current.startPx + (event.clientX - colDrag.current.startX))
+          const id = colDrag.current.id
+          setColPx((prev) => ({ ...prev, [id]: width }))
+        }
       }
       if (rowDrag.current) {
         const height = Math.max(22, rowDrag.current.startH + (event.clientY - rowDrag.current.startY))
         const id = rowDrag.current.id
-        setRowHeights((prev) => ({ ...prev, [id]: height }))
+        setRowHeights((prev) =>
+          isChemHeaderRowId(id)
+            ? { ...prev, [id]: height }
+            : { ...prev, [CHEM_BODY_ROW_KEY]: height },
+        )
       }
     }
     const onUp = () => {
+      const resizedRowId = rowDrag.current?.id
       const didResize = Boolean(colDrag.current || rowDrag.current)
       if (colDrag.current) {
-        setColPx((current) => {
-          setColumns((prev) => {
-            const total = prev.reduce((sum, col) => sum + (current[col.id] ?? 40), 0) || 1
-            return normalizeColumns(
-              prev.map((col) => ({
-                ...col,
-                width: ((current[col.id] ?? 40) / total) * 100,
-              })),
-            )
+        if (colDrag.current.kind !== 'meta-split') {
+          setColPx((current) => {
+            setColumns((prev) => {
+              const total = prev.reduce((sum, col) => sum + (current[col.id] ?? 40), 0) || 1
+              return normalizeColumns(
+                prev.map((col) => ({
+                  ...col,
+                  width: ((current[col.id] ?? 40) / total) * 100,
+                })),
+              )
+            })
+            return current
           })
-          return current
-        })
+        }
         colDrag.current = null
       }
       rowDrag.current = null
@@ -496,7 +571,9 @@ export function ChemicalLedgerPage() {
           setCanUndo(true)
           setCanRedo(false)
         }
-        window.requestAnimationFrame(() => measureBodyRef.current())
+        if (!(resizedRowId && isChemHeaderRowId(resizedRowId))) {
+          window.requestAnimationFrame(() => measureBodyRef.current())
+        }
       }
       resizeSnapRef.current = null
     }
@@ -539,6 +616,7 @@ export function ChemicalLedgerPage() {
       setColumns(loadChemFormColumns(nextId))
       setRowHeights(loadHeaderRowHeights(nextId))
       setChrome(loadChemSheetChrome(nextId))
+      setCellFonts(loadChemCellFonts(nextId))
       setColPx({})
       setEditRowLock({})
     }
@@ -557,7 +635,7 @@ export function ChemicalLedgerPage() {
     const index = source.rows.findIndex((row) => row.id === afterId)
     const at = index >= 0 ? index + 1 : source.rows.length
     pushFormHistory()
-    setRowHeights(keepHeaderHeights)
+    setRowHeights(keepLayoutHeights)
     setEditRowLock(keepHeaderHeights)
     const inserted = new Map<string, ChemicalLedgerRow>()
     for (const ledger of list) {
@@ -586,7 +664,7 @@ export function ChemicalLedgerPage() {
     if (index < 0) return
     if (!applyAll && source.rows.length <= 1) return
     pushFormHistory()
-    setRowHeights(keepHeaderHeights)
+    setRowHeights(keepLayoutHeights)
     setEditRowLock(keepHeaderHeights)
     updateYearLedgers((prev) =>
       prev.map((ledger) => {
@@ -637,8 +715,19 @@ export function ChemicalLedgerPage() {
     event.preventDefault()
     event.stopPropagation()
     if (formEditRef.current) resizeSnapRef.current = takeFormSnapshot()
-    const startPx = colPx[id] ?? 40
-    colDrag.current = { id, startX: event.clientX, startPx }
+    if (id === CHROME_META_LEFT) {
+      const grid =
+        event.currentTarget.closest('.chem-meta')?.querySelector<HTMLElement>('.chem-align-grid') ?? undefined
+      colDrag.current = {
+        id,
+        startX: event.clientX,
+        startPx: chrome.metaLeftPct ?? 50,
+        kind: 'meta-split',
+        grid,
+      }
+    } else {
+      colDrag.current = { id, startX: event.clientX, startPx: colPx[id] ?? 40 }
+    }
     document.body.classList.add('chem-resizing', 'chem-resizing-col')
   }
 
@@ -646,14 +735,26 @@ export function ChemicalLedgerPage() {
     event.preventDefault()
     event.stopPropagation()
     if (formEditRef.current) resizeSnapRef.current = takeFormSnapshot()
-    const table = event.currentTarget.closest('table')
     const rowEl =
-      table?.querySelector(`tr[data-row-id="${rowId}"]`) ??
-      tableWrapRef.current?.querySelector(`tr[data-row-id="${rowId}"]`)
+      event.currentTarget.closest<HTMLElement>('[data-row-id]') ??
+      tableWrapRef.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(rowId)}"]`) ??
+      sheetRef.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(rowId)}"]`)
+    if (isChemHeaderRowId(rowId)) {
+      const locked = fillRowHeightRef.current
+      setRowHeights((prev) => {
+        if (prev[CHEM_BODY_ROW_KEY] != null || locked == null) return prev
+        return { ...prev, [CHEM_BODY_ROW_KEY]: locked }
+      })
+    }
     rowDrag.current = {
       id: rowId,
       startY: event.clientY,
-      startH: liveRowHeights[rowId] || rowEl?.getBoundingClientRect().height || 22,
+      startH: isChemHeaderRowId(rowId)
+        ? liveRowHeights[rowId] || rowEl?.getBoundingClientRect().height || 22
+        : liveRowHeights[CHEM_BODY_ROW_KEY] ||
+          fillRowHeight ||
+          rowEl?.getBoundingClientRect().height ||
+          22,
     }
     document.body.classList.add('chem-resizing', 'chem-resizing-row')
   }
@@ -662,6 +763,17 @@ export function ChemicalLedgerPage() {
     pushFormHistory(historySource)
     const saved = normalizeColumns(next)
     setColumns(saved)
+    setCellFonts((prev) => {
+      const ids = new Set(saved.map((col) => col.id))
+      return Object.fromEntries(
+        Object.entries(prev).filter(([key]) => {
+          if (key.startsWith('chrome-') || key.startsWith('thead-section:')) return true
+          const sep = key.lastIndexOf(':')
+          if (sep < 0) return true
+          return ids.has(key.slice(sep + 1))
+        }),
+      )
+    })
     setColPx((prev) => {
       const mapped: Record<string, number> = {}
       for (const col of saved) {
@@ -674,6 +786,20 @@ export function ChemicalLedgerPage() {
   const persistChrome = (patch: Partial<ChemSheetChrome>, historySource?: string) => {
     pushFormHistory(historySource)
     setChrome((prev) => ({ ...prev, ...patch }))
+  }
+
+  const bumpCellFont = (delta: number) => {
+    if (selectedCellIds.length === 0) return
+    const ids = [...selectedCellIds]
+    pushFormHistory(`font:${[...ids].sort().join(',')}`)
+    setCellFonts((prev) => {
+      const next = { ...prev }
+      for (const id of ids) {
+        const current = resolveChemCellFont(next, id) ?? defaultChemCellFont(id)
+        next[id] = clampChemCellFont(current + delta)
+      }
+      return next
+    })
   }
 
   const insertCol = (afterId: string) => {
@@ -717,14 +843,17 @@ export function ChemicalLedgerPage() {
         columns,
         chrome,
         rowHeights,
+        cellFonts,
       )
     } else {
       saveChemFormColumns(columns, id)
       saveChemSheetChrome(chrome, id)
       saveHeaderRowHeights(rowHeights, id)
+      saveChemCellFonts(cellFonts, id)
     }
     setEditRowLock({})
     setFormEdit(false)
+    clearFormHistory()
   }
 
   const confirmDelete = () => {
@@ -765,16 +894,42 @@ export function ChemicalLedgerPage() {
 
   const printPage = () => {
     document.body.classList.add('chem-printing')
-    window.print()
+    setPrinting(true)
+    window.setTimeout(() => window.print(), 50)
   }
+
+  const confirmReset = () => {
+    if (!selected) {
+      setPendingReset(false)
+      return
+    }
+    pushFormHistory()
+    const count = Math.max(LEDGER_ROW_COUNT, selected.rows.length)
+    updateLedger(selected.id, {
+      rows: Array.from({ length: count }, () => createLedgerRow()),
+    })
+    setPendingReset(false)
+  }
+
+  const saveRef = useRef(save)
+  saveRef.current = save
+  const commitFormLayoutRef = useRef(commitFormLayout)
+  commitFormLayoutRef.current = commitFormLayout
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return
-      if (event.key === 'z' && !event.shiftKey) {
+      const key = event.key.toLowerCase()
+      if (key === 's') {
+        event.preventDefault()
+        if (formEditRef.current) commitFormLayoutRef.current()
+        else saveRef.current()
+        return
+      }
+      if (key === 'z' && !event.shiftKey) {
         event.preventDefault()
         undoForm()
-      } else if (event.key === 'y' || (event.key === 'z' && event.shiftKey)) {
+      } else if (key === 'y' || (key === 'z' && event.shiftKey)) {
         event.preventDefault()
         redoForm()
       }
@@ -958,13 +1113,21 @@ export function ChemicalLedgerPage() {
                     action={formAction}
                     onAction={setFormAction}
                     layoutOnly={showAll}
+                    canFont={selectedCellIds.length > 0}
+                    selectedFont={
+                      selectedCellIds.length > 0
+                        ? resolveChemCellFont(cellFonts, selectedCellIds[selectedCellIds.length - 1]) ??
+                          defaultChemCellFont(selectedCellIds[selectedCellIds.length - 1])
+                        : null
+                    }
+                    onFont={bumpCellFont}
                   />
                   <div className="chem-sheet-tool-btns">
                     <ComposeModeButton active={compose} onToggle={toggleCompose} />
                     <button
                       className="chem-doc-btn chem-doc-icon"
                       type="button"
-                      aria-label="뒤로가기"
+                      aria-label="이전"
                       disabled={!canUndo}
                       onClick={undoForm}
                     >
@@ -973,14 +1136,14 @@ export function ChemicalLedgerPage() {
                     <button
                       className="chem-doc-btn chem-doc-icon"
                       type="button"
-                      aria-label="앞으로가기"
+                      aria-label="다음"
                       disabled={!canRedo}
                       onClick={redoForm}
                     >
                       <Redo2 size={16} />
                     </button>
                     <button
-                      className="chem-doc-btn chem-doc-commit"
+                      className={`chem-doc-btn${canUndo ? ' chem-doc-commit' : ''}`}
                       type="button"
                       onClick={commitFormLayout}
                     >
@@ -990,7 +1153,7 @@ export function ChemicalLedgerPage() {
                   </div>
                 </>
               ) : (
-                <>
+                <div className="chem-sheet-tool-btns">
                   <ComposeModeButton active={compose} onToggle={toggleCompose} />
                   <button
                     className="chem-doc-btn"
@@ -998,6 +1161,7 @@ export function ChemicalLedgerPage() {
                     onClick={() => {
                       snapshotFormLayout()
                       setFormAction(null)
+                      clearFormHistory()
                       setFormEdit(true)
                     }}
                   >
@@ -1006,10 +1170,11 @@ export function ChemicalLedgerPage() {
                   </button>
                   {showAll ? null : (
                     <>
+                      <span className="insp-tool-split" aria-hidden="true" />
                       <button
                         className="chem-doc-btn chem-doc-icon"
                         type="button"
-                        aria-label="뒤로가기"
+                        aria-label="이전"
                         disabled={!canUndo}
                         onClick={undoForm}
                       >
@@ -1018,14 +1183,23 @@ export function ChemicalLedgerPage() {
                       <button
                         className="chem-doc-btn chem-doc-icon"
                         type="button"
-                        aria-label="앞으로가기"
+                        aria-label="다음"
                         disabled={!canRedo}
                         onClick={redoForm}
                       >
                         <Redo2 size={16} />
                       </button>
+                      <button
+                        className="chem-doc-btn insp-reset-btn"
+                        type="button"
+                        onClick={() => setPendingReset(true)}
+                      >
+                        <RotateCcw size={14} />
+                        전체 초기화
+                      </button>
                     </>
                   )}
+                  <span className="insp-tool-split" aria-hidden="true" />
                   <button
                     className={`chem-doc-btn chem-doc-save ${dirty ? 'is-dirty' : ''}`}
                     type="button"
@@ -1034,11 +1208,11 @@ export function ChemicalLedgerPage() {
                     <img src={diskette} alt="" />
                     {dirty ? '저장' : saved ? '저장됨' : '저장'}
                   </button>
-                  <button className="chem-doc-btn" type="button" onClick={printPage}>
+                  <button className="chem-doc-btn insp-print-btn" type="button" onClick={printPage}>
                     <Printer size={14} />
                     인쇄
                   </button>
-                </>
+                </div>
               )}
             </div>
         {showAll ? (
@@ -1063,52 +1237,100 @@ export function ChemicalLedgerPage() {
             onRowResizeStart={startRowResize}
             onInsertRow={(ledgerId, afterId) => insertRowAfter(ledgerId, afterId, true)}
             onDeleteRow={(ledgerId, rowId) => deleteRowAt(ledgerId, rowId, true)}
+            cellFonts={cellFonts}
+            selectedCellIds={selectedCellIds}
+            onSelectCells={setSelectedCellIds}
           />
         ) : selected ? (
-        <div className="chem-paper">
-          <ChemLedgerSheet
-            ledger={selected}
-            year={selectedYear}
-            formEdit={formEdit}
-            formAction={formAction}
-            columns={columns}
-            chrome={chrome}
-            rowHeights={liveRowHeights}
-            fillRowHeight={fillRowHeight}
-            colPx={colPx}
-            flashColId={flashColId}
-            flashRowId={flashRowId}
-            showPageGuides={formEdit}
-            extraGuides={pageGuideCount}
-            sheetRef={sheetRef}
-            tableWrapRef={tableWrapRef}
-            onChromeChange={persistChrome}
-            onUpdateCell={updateCell}
-            onUpdateMeta={(patch) => updateMeta(patch)}
-            onToggleActivity={toggleActivity}
-            onRenameProduct={(productName) => {
-              pushFormHistory('meta:productName')
-              updateLedger(selected.id, {
-                meta: { ...selected.meta, productName },
-                tabName:
-                  selected.tabName === selected.meta.productName || !selected.tabName
-                    ? productName || '새 물질'
-                    : selected.tabName,
-              })
-            }}
-            onDeleteRow={(rowId) => deleteRowAt(selected.id, rowId, false)}
-            onInsertRow={(afterId) => insertRowAfter(selected.id, afterId, false)}
-            onInsertCol={insertCol}
-            onDeleteCol={deleteCol}
-            onRenameCol={renameCol}
-            onRenameBlock={renameBlock}
-            onResizeStart={startColResize}
-            onRowResizeStart={startRowResize}
-          />
+        <div className={displayChunks.length > 1 ? 'chem-page-stack' : undefined}>
+          {displayChunks.map((chunk, index) => {
+            const paged = displayChunks.length > 1
+            const pageCaption = selected.tabName || selected.meta.productName || '새 물질'
+            return (
+            <div
+              key={`${selected.id}-p${index}`}
+              className={`chem-paper${paged ? ' chem-stack-paper' : ''}`}
+            >
+              {paged ? (
+                <div className="chem-page-guides no-print" aria-hidden="true">
+                  <div className="chem-page-guide is-first">
+                    <span>{`${pageCaption} ${index + 1}/${displayChunks.length}`}</span>
+                  </div>
+                </div>
+              ) : null}
+              <ChemLedgerSheet
+                ledger={{ ...selected, rows: selected.rows.slice(chunk.start, chunk.end) }}
+                year={selectedYear}
+                formEdit={formEdit}
+                formAction={formAction}
+                columns={columns}
+                chrome={chrome}
+                rowHeights={liveRowHeights}
+                fillRowHeight={index === 0 && !printing ? fillRowHeight : null}
+                colPx={colPx}
+                flashColId={flashColId}
+                flashRowId={flashRowId}
+                cellFonts={cellFonts}
+                selectedCellIds={selectedCellIds}
+                onSelectCells={setSelectedCellIds}
+                showPageGuides={false}
+                extraGuides={0}
+                pageStart={index + 1}
+                pageTotal={displayChunks.length}
+                pageLabel={pageCaption}
+                sheetRef={index === 0 ? sheetRef : undefined}
+                tableWrapRef={index === 0 ? tableWrapRef : undefined}
+                onChromeChange={persistChrome}
+                onUpdateCell={updateCell}
+                onUpdateMeta={(patch) => updateMeta(patch)}
+                onToggleActivity={toggleActivity}
+                onRenameProduct={(productName) => {
+                  pushFormHistory('meta:productName')
+                  updateLedger(selected.id, {
+                    meta: { ...selected.meta, productName },
+                    tabName:
+                      selected.tabName === selected.meta.productName || !selected.tabName
+                        ? productName || '새 물질'
+                        : selected.tabName,
+                  })
+                }}
+                onDeleteRow={(rowId) => deleteRowAt(selected.id, rowId, false)}
+                onInsertRow={(afterId) => insertRowAfter(selected.id, afterId, false)}
+                onInsertCol={insertCol}
+                onDeleteCol={deleteCol}
+                onRenameCol={renameCol}
+                onRenameBlock={renameBlock}
+                onResizeStart={startColResize}
+                onRowResizeStart={startRowResize}
+              />
+            </div>
+            )
+          })}
         </div>
         ) : null}
         </>
       )}
+      {pendingReset ? (
+        <div className="modal-backdrop confirm-backdrop no-print" onClick={() => setPendingReset(false)}>
+          <div
+            className="confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chem-reset-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p id="chem-reset-title">초기화하시겠습니까?</p>
+            <div className="confirm-modal-actions">
+              <button className="secondary-btn" type="button" onClick={() => setPendingReset(false)}>
+                아니오
+              </button>
+              <button className="primary-btn" type="button" onClick={confirmReset}>
+                예
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {pendingDeleteId && (
         <div className="modal-backdrop confirm-backdrop no-print" onClick={() => setPendingDeleteId(null)}>
           <div

@@ -1,7 +1,8 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import { GripVertical, X } from 'lucide-react'
 import signGyejang from '../assets/insp-sign-gyejang.png'
 import { PRINT_PAGE_HEIGHT_MM } from './ChemLedgerSheet'
+import { useAppData } from '../context/AppDataContext'
 import { pad2 } from '../lib/date'
 import { dayConfirmMark, itemKey, recordHasIssueMark } from '../lib/inspections'
 import {
@@ -158,9 +159,9 @@ function markClass(mark: CheckResult): string {
   return ''
 }
 
-function dayColClass(date: string, selectedDate: string, today: string, printing: boolean): string {
+function dayColClass(date: string, selectedDates: string[], today: string, printing: boolean): string {
   if (printing) return 'day-col'
-  return `day-col${date === selectedDate ? ' is-active' : ''}${date === today ? ' is-today' : ''}`
+  return `day-col${selectedDates.includes(date) ? ' is-active' : ''}${date === today ? ' is-today' : ''}`
 }
 
 function ColHandle({
@@ -235,7 +236,7 @@ export function InspectionSheet({
   days,
   monthPrefix,
   today,
-  selectedDate,
+  selectedDates,
   inspectorName,
   inspectors,
   inspectorWarn = false,
@@ -246,6 +247,7 @@ export function InspectionSheet({
   layoutOnly = false,
   draggingItemId,
   onSelectDate,
+  onDaySelectStart,
   onToggleCell,
   onSaveReading,
   onSaveFraction,
@@ -272,7 +274,7 @@ export function InspectionSheet({
   days: number[]
   monthPrefix: string
   today: string
-  selectedDate: string
+  selectedDates: string[]
   inspectorName: string
   inspectors: string[]
   inspectorWarn?: boolean
@@ -283,6 +285,7 @@ export function InspectionSheet({
   layoutOnly?: boolean
   draggingItemId: string | null
   onSelectDate: (date: string) => void
+  onDaySelectStart?: (date: string, event: PointerEvent<HTMLButtonElement>) => void
   onToggleCell: (day: number, itemNo: number) => void
   onSaveReading: (day: number, item: CheckItem, value: string) => void
   onSaveFraction: (day: number, item: CheckItem, reading: string, part: 'num' | 'den', value: string) => void
@@ -304,6 +307,8 @@ export function InspectionSheet({
   onRowResizeStart?: (id: string, event: MouseEvent<HTMLButtonElement>) => void
 }) {
   const title = `${year}년도 ${pad2(month)}월 소그룹 설비 일상 점검표`
+  const { approvalStamp } = useAppData()
+  const stampSrc = approvalStamp || signGyejang
   const dayCount = days.length
   const editUi = formEdit && !printing
   const editItems = editUi && !layoutOnly
@@ -455,7 +460,7 @@ export function InspectionSheet({
                     </tr>
                     <tr>
                       <td className="insp-stamp-sign">
-                        <img src={signGyejang} alt={`${chrome.approvalRole} 서명`} />
+                        <img src={stampSrc} alt={`${chrome.approvalRole} 서명`} />
                       </td>
                     </tr>
                   </tbody>
@@ -497,7 +502,7 @@ export function InspectionSheet({
             </td>
             {useDayStamp ? (
               <td className="insp-stamp-sign" colSpan={signSpan}>
-                <img src={signGyejang} alt={`${chrome.approvalRole} 서명`} />
+                <img src={stampSrc} alt={`${chrome.approvalRole} 서명`} />
                 <CellHandles colId="day" rowId="banner-inspector" onCol={resize} onRow={rowResize} />
               </td>
             ) : null}
@@ -538,9 +543,18 @@ export function InspectionSheet({
                 return (
                   <th
                     key={day}
-                    className={dayColClass(date, selectedDate, today, printing)}
+                    data-insp-day={day}
+                    className={dayColClass(date, selectedDates, today, printing)}
                   >
-                    <button type="button" onClick={() => onSelectDate(date)}>
+                    <button
+                      type="button"
+                      aria-pressed={selectedDates.includes(date)}
+                      onClick={(event) => {
+                        if (event.detail !== 0) return
+                        onSelectDate(date)
+                      }}
+                      onPointerDown={(event) => onDaySelectStart?.(date, event)}
+                    >
                       {day}
                     </button>
                     <CellHandles colId="day" rowId="cols" onCol={resize} onRow={rowResize} />
@@ -704,7 +718,8 @@ export function InspectionSheet({
                     return (
                       <td
                         key={day}
-                        className={dayColClass(date, selectedDate, today, printing)}
+                        data-insp-day={day}
+                        className={dayColClass(date, selectedDates, today, printing)}
                       >
                         <CellHandles colId="day" rowId={itemId} onCol={resize} onRow={rowResize} />
                         {kind === 'mark' ? (
@@ -789,7 +804,8 @@ export function InspectionSheet({
                   return (
                     <td
                       key={day}
-                      className={dayColClass(date, selectedDate, today, printing)}
+                      data-insp-day={day}
+                      className={dayColClass(date, selectedDates, today, printing)}
                     >
                       <CellHandles colId="day" rowId="status" onCol={resize} onRow={rowResize} />
                       <button
@@ -948,7 +964,7 @@ function InspectionAllSheet({
   days,
   monthPrefix,
   today,
-  selectedDate,
+  selectedDates,
   inspectors,
   inspectorByEquipment,
   inspectorWarnId,
@@ -957,6 +973,7 @@ function InspectionAllSheet({
   printing,
   sharedLayout,
   onSelectDate,
+  onDaySelectStart,
   onToggleCell,
   onSaveReading,
   onSaveFraction,
@@ -979,7 +996,7 @@ function InspectionAllSheet({
   days: number[]
   monthPrefix: string
   today: string
-  selectedDate: string
+  selectedDates: string[]
   inspectors: string[]
   inspectorByEquipment: Record<string, string>
   inspectorWarnId?: string | null
@@ -988,6 +1005,7 @@ function InspectionAllSheet({
   printing: boolean
   sharedLayout?: InspFormLayout
   onSelectDate: (date: string) => void
+  onDaySelectStart?: (date: string, event: PointerEvent<HTMLButtonElement>) => void
   onToggleCell: (equipment: Equipment, day: number, itemNo: number) => void
   onSaveReading: (equipment: Equipment, day: number, item: CheckItem, value: string) => void
   onSaveFraction: (
@@ -1050,7 +1068,7 @@ function InspectionAllSheet({
         days={days}
         monthPrefix={monthPrefix}
         today={today}
-        selectedDate={selectedDate}
+        selectedDates={selectedDates}
         inspectorName={inspectorByEquipment[equipment.id] ?? ''}
         inspectors={inspectors}
         inspectorWarn={inspectorWarnId === equipment.id}
@@ -1062,6 +1080,7 @@ function InspectionAllSheet({
         draggingItemId={null}
         layout={layout}
         onSelectDate={onSelectDate}
+        onDaySelectStart={onDaySelectStart}
         onToggleCell={(day, itemNo) => onToggleCell(equipment, day, itemNo)}
         onSaveReading={(day, item, value) => onSaveReading(equipment, day, item, value)}
         onSaveFraction={(day, item, reading, part, value) =>
@@ -1095,7 +1114,7 @@ export function InspectionAllView({
   days,
   monthPrefix,
   today,
-  selectedDate,
+  selectedDates,
   inspectors,
   inspectorByEquipment,
   inspectorWarnId = null,
@@ -1104,6 +1123,7 @@ export function InspectionAllView({
   printing = false,
   sharedLayout,
   onSelectDate,
+  onDaySelectStart,
   onToggleCell,
   onSaveReading,
   onSaveFraction,
@@ -1123,7 +1143,7 @@ export function InspectionAllView({
   days: number[]
   monthPrefix: string
   today: string
-  selectedDate: string
+  selectedDates: string[]
   inspectors: string[]
   inspectorByEquipment: Record<string, string>
   inspectorWarnId?: string | null
@@ -1132,6 +1152,7 @@ export function InspectionAllView({
   printing?: boolean
   sharedLayout?: InspFormLayout
   onSelectDate: (date: string) => void
+  onDaySelectStart?: (date: string, event: PointerEvent<HTMLButtonElement>) => void
   onToggleCell: (equipment: Equipment, day: number, itemNo: number) => void
   onSaveReading: (equipment: Equipment, day: number, item: CheckItem, value: string) => void
   onSaveFraction: (
@@ -1188,7 +1209,7 @@ export function InspectionAllView({
             days={days}
             monthPrefix={monthPrefix}
             today={today}
-            selectedDate={selectedDate}
+            selectedDates={selectedDates}
             inspectors={inspectors}
             inspectorByEquipment={inspectorByEquipment}
             inspectorWarnId={inspectorWarnId}
@@ -1197,6 +1218,7 @@ export function InspectionAllView({
             printing={printing}
             sharedLayout={sharedLayout}
             onSelectDate={onSelectDate}
+            onDaySelectStart={onDaySelectStart}
             onToggleCell={onToggleCell}
             onSaveReading={onSaveReading}
             onSaveFraction={onSaveFraction}
