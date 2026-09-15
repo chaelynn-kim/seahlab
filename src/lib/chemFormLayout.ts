@@ -19,6 +19,7 @@ const HEADER_ROW_KEY = 'chemFormHeaderRows'
 const HEADER_ROW_KEY_BY_ID = 'chemFormHeaderRowsById'
 const CHROME_KEY_BY_ID = 'chemSheetChromeById'
 const FONT_KEY_BY_ID = 'chemFormCellFontsById'
+const PAGES_KEY_BY_ID = 'chemFormPagesById'
 
 export const CHEM_FONT_MIN = 7
 export const CHEM_FONT_MAX = 28
@@ -89,6 +90,63 @@ export function saveChemCellFonts(fonts: Record<string, number>, ledgerId = ''):
   if (!ledgerId) return
   const byId = readJson<Record<string, Record<string, number>>>(FONT_KEY_BY_ID, {})
   writeJson(FONT_KEY_BY_ID, { ...byId, [ledgerId]: sanitizeCellFonts(fonts) })
+}
+
+export function pageChunksFromCounts(counts: number[]): { start: number; end: number }[] {
+  const chunks: { start: number; end: number }[] = []
+  let start = 0
+  for (const count of counts) {
+    const size = Math.max(1, Math.round(count))
+    chunks.push({ start, end: start + size })
+    start += size
+  }
+  return chunks.length ? chunks : [{ start: 0, end: 0 }]
+}
+
+export function pageIndexForRow(counts: number[], rowIndex: number): number {
+  if (counts.length === 0) return 0
+  let start = 0
+  for (let index = 0; index < counts.length; index += 1) {
+    const end = start + counts[index]
+    if (rowIndex < end) return index
+    start = end
+  }
+  return counts.length - 1
+}
+
+export function normalizePageCounts(counts: number[] | null | undefined, rowCount: number): number[] {
+  const total = Math.max(1, rowCount)
+  const raw = (counts ?? [])
+    .map((count) => Math.max(1, Math.round(count)))
+    .filter((count) => Number.isFinite(count) && count > 0)
+  if (raw.length === 0) return [total]
+  const sum = raw.reduce((acc, count) => acc + count, 0)
+  if (sum === total) return raw
+  const next = [...raw]
+  if (sum < total) {
+    next[next.length - 1] += total - sum
+    return next
+  }
+  let extra = sum - total
+  for (let index = next.length - 1; index >= 0 && extra > 0; index -= 1) {
+    const take = Math.min(extra, next[index] - 1)
+    next[index] -= take
+    extra -= take
+  }
+  const kept = next.filter((count) => count > 0)
+  return kept.length ? kept : [total]
+}
+
+export function loadChemPageCounts(ledgerId: string, rowCount: number): number[] {
+  if (!ledgerId) return [Math.max(1, rowCount)]
+  const byId = readJson<Record<string, number[]>>(PAGES_KEY_BY_ID, {})
+  return normalizePageCounts(byId[ledgerId], rowCount)
+}
+
+export function saveChemPageCounts(counts: number[], ledgerId: string, rowCount: number): void {
+  if (!ledgerId) return
+  const byId = readJson<Record<string, number[]>>(PAGES_KEY_BY_ID, {})
+  writeJson(PAGES_KEY_BY_ID, { ...byId, [ledgerId]: normalizePageCounts(counts, rowCount) })
 }
 
 export interface ChemSheetChrome {
@@ -369,6 +427,11 @@ export function removeChemFormLayout(ledgerId: string): void {
   if (fonts[ledgerId]) {
     const { [ledgerId]: _removed, ...rest } = fonts
     writeJson(FONT_KEY_BY_ID, rest)
+  }
+  const pages = readJson<Record<string, number[]>>(PAGES_KEY_BY_ID, {})
+  if (pages[ledgerId]) {
+    const { [ledgerId]: _removed, ...rest } = pages
+    writeJson(PAGES_KEY_BY_ID, rest)
   }
 }
 

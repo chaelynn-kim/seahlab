@@ -18,6 +18,11 @@ export const db = getFirestore(app)
 export const googleProvider = new GoogleAuthProvider()
 
 googleProvider.setCustomParameters({ hd: 'seah.co.kr', prompt: 'select_account' })
+googleProvider.addScope('openid')
+googleProvider.addScope('profile')
+googleProvider.addScope('email')
+googleProvider.addScope('https://www.googleapis.com/auth/userinfo.profile')
+googleProvider.addScope('https://www.googleapis.com/auth/userinfo.email')
 
 export const ALLOWED_EMAIL_DOMAIN = 'seah.co.kr'
 export const ADMIN_EMAIL = 'chaelynn.kim@seah.co.kr'

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { ClipboardCheck, FlaskConical, History, LogOut, Menu, Settings } from 'lucide-react'
+import { ClipboardCheck, FlaskConical, History, LogOut, Menu, Settings, User } from 'lucide-react'
 import { useAppData } from '../../context/AppDataContext'
 import { useAuth } from '../../context/AuthContext'
 import { SeahLogo } from '../brand/SeahLogo'
@@ -12,6 +12,21 @@ const NAV = [
   { to: '/settings', key: 'settings', label: '설정', icon: Settings },
 ] as const
 
+function ProfileAvatar({ photoURL }: { photoURL?: string }) {
+  const [failed, setFailed] = useState(false)
+  const showPhoto = Boolean(photoURL) && !failed
+
+  return (
+    <span className={`avatar${showPhoto ? ' has-photo' : ''}`} aria-hidden="true">
+      {showPhoto ? (
+        <img src={photoURL} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+      ) : (
+        <User size={18} strokeWidth={2.2} />
+      )}
+    </span>
+  )
+}
+
 export function AppLayout() {
   const [open, setOpen] = useState(false)
   const { profile, isAdmin, logOut } = useAuth()
@@ -21,21 +36,19 @@ export function AppLayout() {
   return (
     <div className="app-shell">
       <header className="header">
-        <div className="header-left">
+        <div className="header-brand">
           <button className="menu-btn" type="button" onClick={() => setOpen((value) => !value)} aria-label="메뉴">
             <Menu size={20} />
           </button>
-          <div className="brand">
-            <SeahLogo />
-            <div className="brand-divider" aria-hidden="true" />
-            <strong className="brand-title">SeAH-Lab</strong>
-          </div>
+          <SeahLogo onDark />
         </div>
+        <div className="brand-divider" aria-hidden="true" />
+        <strong className="brand-title">SeAH-Lab System</strong>
         <div className="header-right">
           {cloudError ? <span className="cloud-error">{cloudError}</span> : null}
           {profile ? (
             <div className="user-chip">
-              <span className="avatar">{profile.name.slice(0, 1)}</span>
+              <ProfileAvatar key={profile.photoURL ?? profile.email} photoURL={profile.photoURL} />
               <span>
                 <strong className="name">{profile.name}</strong>
                 <span className="meta">{profile.email}</span>
@@ -67,6 +80,16 @@ export function AppLayout() {
               )
             })}
           </nav>
+          <div className="sidebar-contact">
+            <span className="avatar" aria-hidden="true">
+              <User size={18} strokeWidth={2.2} />
+            </span>
+            <span className="sidebar-contact-copy">
+              <strong className="name">시스템 문의</strong>
+              <span className="meta">품질경영팀 · 김채린</span>
+              <span className="meta">chaelynn.kim@seah.co.kr</span>
+            </span>
+          </div>
         </aside>
         <main className="main">
           <Outlet />

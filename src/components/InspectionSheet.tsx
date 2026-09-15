@@ -1,7 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
-import { GripVertical, X } from 'lucide-react'
+import { Minus, Plus } from 'lucide-react'
 import signGyejang from '../assets/insp-sign-gyejang.png'
 import { PRINT_PAGE_HEIGHT_MM } from './ChemLedgerSheet'
+import { type ChemFormAction } from './ChemLedgerTable'
 import { useAppData } from '../context/AppDataContext'
 import { pad2 } from '../lib/date'
 import { dayConfirmMark, itemKey, recordHasIssueMark } from '../lib/inspections'
@@ -17,6 +18,7 @@ import {
   DEFAULT_INSP_COL_PCT,
   emptyInspLayout,
   INSP_ALL_TAB_ID,
+  inspCellId,
   loadInspFormLayout,
   type InspColId,
   type InspFormLayout,
@@ -30,6 +32,12 @@ import type {
   InspectionRecord,
   TimingCode,
 } from '../types'
+
+function fontStyle(cellId: string, fonts?: Record<string, number>): { fontSize: string } | undefined {
+  const size = fonts?.[cellId] ?? undefined
+  if (size == null) return undefined
+  return { fontSize: `${size}px` }
+}
 
 function CriteriaText({ text, highlight }: { text: string; highlight: boolean }) {
   if (!highlight) return <>{text}</>
@@ -203,18 +211,29 @@ function RowHandle({
 function CellHandles({
   colId,
   rowId,
+  formCol,
+  formRow,
+  selectedCols,
+  selectedRows,
   onCol,
   onRow,
 }: {
   colId?: InspColId
   rowId?: string
+  formCol?: string
+  formRow?: string
+  selectedCols: Set<string>
+  selectedRows: Set<string>
   onCol?: (id: InspColId, event: MouseEvent<HTMLButtonElement>) => void
   onRow?: (id: string, event: MouseEvent<HTMLButtonElement>) => void
 }) {
+  const showCol = Boolean(colId && onCol && selectedCols.has(formCol ?? colId))
+  const showRow = Boolean(rowId && onRow && selectedRows.has(formRow ?? rowId))
+  if (!showCol && !showRow) return null
   return (
     <>
-      {colId ? <ColHandle colId={colId} onStart={onCol} /> : null}
-      {rowId ? <RowHandle rowId={rowId} onStart={onRow} /> : null}
+      {showCol && colId ? <ColHandle colId={colId} onStart={onCol} /> : null}
+      {showRow && rowId ? <RowHandle rowId={rowId} onStart={onRow} /> : null}
     </>
   )
 }
@@ -227,6 +246,50 @@ function colWidth(id: InspColId, layout: InspFormLayout, fallback: string): stri
 function rowStyle(rowId: string, layout: InspFormLayout): { height: number } | undefined {
   const height = layout.rowHeights[rowId]
   return height ? { height } : undefined
+}
+
+export type InspectionSheetProps = {
+  equipment: Equipment
+  year: number
+  month: number
+  days: number[]
+  monthPrefix: string
+  today: string
+  selectedDates: string[]
+  inspectorName: string
+  inspectors: string[]
+  inspectorWarn?: boolean
+  chrome: InspSheetChrome
+  recordsByDate: Map<string, InspectionRecord>
+  formEdit: boolean
+  formAction?: ChemFormAction
+  printing?: boolean
+  layoutOnly?: boolean
+  draggingItemId?: string | null
+  selectedCellIds?: string[]
+  onSelectCell?: (cellId: string, additive: boolean) => void
+  onInsertItem?: (itemId: string) => void
+  onSelectDate: (date: string) => void
+  onDaySelectStart?: (date: string, event: PointerEvent<HTMLButtonElement>) => void
+  onToggleCell: (day: number, itemNo: number) => void
+  onSaveReading: (day: number, item: CheckItem, value: string) => void
+  onSaveFraction: (day: number, item: CheckItem, reading: string, part: 'num' | 'den', value: string) => void
+  onToggleDayOk: (day: number) => void
+  onChromeChange: (patch: Partial<InspSheetChrome>) => void
+  onRenameEquipment: (patch: Partial<Pick<Equipment, 'name' | 'shortName'>>) => void
+  onUpdateItem: (itemId: string, patch: Partial<CheckItem>) => void
+  onDeleteItem: (itemId: string) => void
+  onItemDragStart?: (itemId: string) => void
+  onItemDragOver?: () => void
+  onItemDrop?: (itemId: string) => void
+  onItemDragEnd?: () => void
+  onIssueNoteChange: (day: number, value: string) => void
+  onRequestDateChange: (day: number, value: string) => void
+  onConfirmDateChange: (day: number, value: string) => void
+  onInspectorChange: (name: string) => void
+  layout?: InspFormLayout
+  onColResizeStart?: (id: InspColId, event: MouseEvent<HTMLButtonElement>) => void
+  onRowResizeStart?: (id: string, event: MouseEvent<HTMLButtonElement>) => void
 }
 
 export function InspectionSheet({
@@ -243,9 +306,12 @@ export function InspectionSheet({
   chrome,
   recordsByDate,
   formEdit,
+  formAction = null,
   printing = false,
   layoutOnly = false,
-  draggingItemId,
+  selectedCellIds = [],
+  onSelectCell,
+  onInsertItem,
   onSelectDate,
   onDaySelectStart,
   onToggleCell,
@@ -256,10 +322,6 @@ export function InspectionSheet({
   onRenameEquipment,
   onUpdateItem,
   onDeleteItem,
-  onItemDragStart,
-  onItemDragOver,
-  onItemDrop,
-  onItemDragEnd,
   onIssueNoteChange,
   onRequestDateChange,
   onConfirmDateChange,
@@ -267,62 +329,54 @@ export function InspectionSheet({
   layout = emptyInspLayout(),
   onColResizeStart,
   onRowResizeStart,
-}: {
-  equipment: Equipment
-  year: number
-  month: number
-  days: number[]
-  monthPrefix: string
-  today: string
-  selectedDates: string[]
-  inspectorName: string
-  inspectors: string[]
-  inspectorWarn?: boolean
-  chrome: InspSheetChrome
-  recordsByDate: Map<string, InspectionRecord>
-  formEdit: boolean
-  printing?: boolean
-  layoutOnly?: boolean
-  draggingItemId: string | null
-  onSelectDate: (date: string) => void
-  onDaySelectStart?: (date: string, event: PointerEvent<HTMLButtonElement>) => void
-  onToggleCell: (day: number, itemNo: number) => void
-  onSaveReading: (day: number, item: CheckItem, value: string) => void
-  onSaveFraction: (day: number, item: CheckItem, reading: string, part: 'num' | 'den', value: string) => void
-  onToggleDayOk: (day: number) => void
-  onChromeChange: (patch: Partial<InspSheetChrome>) => void
-  onRenameEquipment: (patch: Partial<Pick<Equipment, 'name' | 'shortName'>>) => void
-  onUpdateItem: (itemId: string, patch: Partial<CheckItem>) => void
-  onDeleteItem: (itemId: string) => void
-  onItemDragStart: (itemId: string) => void
-  onItemDragOver: () => void
-  onItemDrop: (itemId: string) => void
-  onItemDragEnd: () => void
-  onIssueNoteChange: (day: number, value: string) => void
-  onRequestDateChange: (day: number, value: string) => void
-  onConfirmDateChange: (day: number, value: string) => void
-  onInspectorChange: (name: string) => void
-  layout?: InspFormLayout
-  onColResizeStart?: (id: InspColId, event: MouseEvent<HTMLButtonElement>) => void
-  onRowResizeStart?: (id: string, event: MouseEvent<HTMLButtonElement>) => void
-}) {
+}: InspectionSheetProps) {
   const title = `${year}년도 ${pad2(month)}월 소그룹 설비 일상 점검표`
   const { approvalStamp } = useAppData()
   const stampSrc = approvalStamp || signGyejang
   const dayCount = days.length
   const editUi = formEdit && !printing
-  const editItems = editUi && !layoutOnly
+  const editFields = editUi && !layoutOnly
+  const showRowTools = editUi && (formAction === 'row-add' || formAction === 'row-del')
+  const fonts = layout.cellFonts ?? {}
+  const pickCell = (cellId: string, className = '') => {
+    const on = editUi && !formAction && selectedCellIds.includes(cellId)
+    const sized = fonts[cellId] != null
+    return {
+      className: [className, on ? 'is-cell-on' : '', sized ? 'is-cell-font' : ''].filter(Boolean).join(' '),
+      style: fontStyle(cellId, fonts),
+      onMouseDown: (event: MouseEvent<HTMLTableCellElement>) => {
+        if (!editUi || formAction || event.button !== 0) return
+        if ((event.target as HTMLElement).closest('.chem-col-handle, .chem-row-handle, .chem-row-tools, .icon-btn')) return
+        onSelectCell?.(cellId, event.shiftKey || event.ctrlKey || event.metaKey)
+      },
+    }
+  }
   const signSpan = 3
   const stampCols = 1 + signSpan
-  const useDayStamp = !editItems && dayCount >= stampCols
+  const useDayStamp = dayCount >= stampCols
   const stampSpan = useDayStamp ? stampCols : 1
-  const titleSpan = editItems ? 3 : 5 + dayCount - 3 - stampSpan
+  const titleSpan = 5 + dayCount - 3 - stampSpan
   const dateSpan = Math.max(2, Math.round(dayCount / 8))
   const noteSpan = Math.max(1, 5 + dayCount - 1 - dateSpan * 2)
   const statusRow = equipment.items.length
   const dayWidth = colWidth('day', layout, `${(64 / Math.max(dayCount, 1)).toFixed(3)}%`)
-  const resize = editUi ? onColResizeStart : undefined
-  const rowResize = editUi ? onRowResizeStart : undefined
+  const canResize = editUi && !formAction
+  const resize = canResize ? onColResizeStart : undefined
+  const rowResize = canResize ? onRowResizeStart : undefined
+  const selectedCols = new Set(selectedCellIds.map((id) => id.slice(id.indexOf(':') + 1)).filter(Boolean))
+  const selectedRows = new Set(selectedCellIds.map((id) => id.slice(0, id.indexOf(':'))).filter(Boolean))
+  const handles = (opts: { colId?: InspColId; rowId?: string; formCol?: string; formRow?: string }) => (
+    <CellHandles
+      colId={opts.colId}
+      rowId={opts.rowId}
+      formCol={opts.formCol}
+      formRow={opts.formRow}
+      selectedCols={selectedCols}
+      selectedRows={selectedRows}
+      onCol={resize}
+      onRow={rowResize}
+    />
+  )
 
   const issueRows = days.flatMap((day) => {
     const record = recordsByDate.get(`${monthPrefix}-${pad2(day)}`)
@@ -341,35 +395,31 @@ export function InspectionSheet({
     <div className="insp-paper">
       <table className={`insp-sheet${editUi ? ' is-form-edit' : ''}`}>
         <colgroup>
-          {editItems ? <col className="col-edit" /> : null}
+          {showRowTools ? <col className="col-edit" /> : null}
           <col className="col-equip" style={{ width: colWidth('equip', layout, `${DEFAULT_INSP_COL_PCT.equip}%`) }} />
           <col className="col-no" style={{ width: colWidth('no', layout, `${DEFAULT_INSP_COL_PCT.no}%`) }} />
           <col className="col-point" style={{ width: colWidth('point', layout, `${DEFAULT_INSP_COL_PCT.point}%`) }} />
           <col className="col-timing" style={{ width: colWidth('timing', layout, `${DEFAULT_INSP_COL_PCT.timing}%`) }} />
           <col className="col-criteria" style={{ width: colWidth('criteria', layout, `${DEFAULT_INSP_COL_PCT.criteria}%`) }} />
-          {editItems ? (
-            <col className="col-kind" style={{ width: colWidth('kind', layout, `${DEFAULT_INSP_COL_PCT.kind}%`) }} />
-          ) : (
-            days.map((day) => <col key={day} className="col-day" style={{ width: dayWidth }} />)
-          )}
-          {editItems ? <col className="col-edit" /> : null}
+          {days.map((day) => (
+            <col key={day} className="col-day" style={{ width: dayWidth }} />
+          ))}
         </colgroup>
         <thead>
           <tr className="insp-banner insp-banner-title" data-row-id="banner-title" style={rowStyle('banner-title', layout)}>
-            {editItems ? <td className="no-print" /> : null}
-            <th className="insp-sheet-title" colSpan={editItems ? 6 : 5 + dayCount} scope="col">
+            {showRowTools ? <td className="chem-edit-col no-print" /> : null}
+            <th {...pickCell(inspCellId('banner-title', 'title'), 'insp-sheet-title')} colSpan={5 + dayCount} scope="col">
               {title}
-              <CellHandles colId="day" rowId="banner-title" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'day', rowId: 'banner-title', formCol: 'title' })}
             </th>
-            {editItems ? <td className="no-print" /> : null}
           </tr>
           <tr className="insp-banner" data-row-id="banner-line" style={rowStyle('banner-line', layout)}>
-            {editItems ? <td className="no-print" /> : null}
-            <th scope="row">
+            {showRowTools ? <td className="chem-edit-col no-print" /> : null}
+            <th {...pickCell(inspCellId('banner-line', 'equip'))} scope="row">
               라인명
-              <CellHandles colId="equip" rowId="banner-line" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'equip', rowId: 'banner-line' })}
             </th>
-            <td colSpan={2}>
+            <td {...pickCell(inspCellId('banner-line', 'point'))} colSpan={2}>
               {editUi ? (
                 <input
                   className="insp-sheet-input"
@@ -380,9 +430,9 @@ export function InspectionSheet({
               ) : (
                 chrome.lineName
               )}
-              <CellHandles colId="point" rowId="banner-line" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'point', rowId: 'banner-line' })}
             </td>
-            <td className="insp-support" rowSpan={2} colSpan={titleSpan}>
+            <td {...pickCell(inspCellId('banner-line', 'support'), 'insp-support')} rowSpan={2} colSpan={titleSpan}>
               {editUi ? (
                 <input
                   className="insp-sheet-input"
@@ -393,11 +443,11 @@ export function InspectionSheet({
               ) : (
                 chrome.supportTeam
               )}
-              <CellHandles colId="day" rowId="banner-line" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'day', rowId: 'banner-line', formCol: 'support' })}
             </td>
             {useDayStamp ? (
               <>
-                <th className="insp-stamp-label" rowSpan={2} scope="row">
+                <th {...pickCell(inspCellId('banner-line', 'stamp-label'), 'insp-stamp-label')} rowSpan={2} scope="row">
                   {editUi ? (
                     <input
                       className="insp-sheet-input"
@@ -410,9 +460,9 @@ export function InspectionSheet({
                       <span key={`${letter}-${index}`}>{letter}</span>
                     ))
                   )}
-                  <CellHandles colId="day" rowId="banner-line" onCol={resize} onRow={rowResize} />
+                  {handles({ colId: 'day', rowId: 'banner-line', formCol: 'stamp-label' })}
                 </th>
-                <th className="insp-stamp-role" colSpan={signSpan} scope="col">
+                <th {...pickCell(inspCellId('banner-line', 'stamp-role'), 'insp-stamp-role')} colSpan={signSpan} scope="col">
                   {editUi ? (
                     <input
                       className="insp-sheet-input"
@@ -423,11 +473,11 @@ export function InspectionSheet({
                   ) : (
                     chrome.approvalRole
                   )}
-                  <CellHandles colId="day" rowId="banner-line" onCol={resize} onRow={rowResize} />
+                  {handles({ colId: 'day', rowId: 'banner-line', formCol: 'stamp-role' })}
                 </th>
               </>
             ) : (
-              <td className="insp-approval" rowSpan={2} colSpan={stampSpan}>
+              <td {...pickCell(inspCellId('banner-inspector', 'stamp'), 'insp-approval')} rowSpan={2} colSpan={stampSpan}>
                 <table className="insp-stamp">
                   <tbody>
                     <tr>
@@ -465,17 +515,17 @@ export function InspectionSheet({
                     </tr>
                   </tbody>
                 </table>
-                <CellHandles colId="day" rowId="banner-inspector" onCol={resize} onRow={rowResize} />
+                {handles({ colId: 'day', rowId: 'banner-inspector', formCol: 'stamp' })}
               </td>
             )}
           </tr>
           <tr className="insp-banner" data-row-id="banner-inspector" style={rowStyle('banner-inspector', layout)}>
-            {editItems ? <td className="no-print" /> : null}
-            <th scope="row">
+            {showRowTools ? <td className="chem-edit-col no-print" /> : null}
+            <th {...pickCell(inspCellId('banner-inspector', 'equip'))} scope="row">
               점검자
-              <CellHandles colId="equip" rowId="banner-inspector" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'equip', rowId: 'banner-inspector' })}
             </th>
-            <td className="insp-inspector" colSpan={2}>
+            <td {...pickCell(inspCellId('banner-inspector', 'point'), 'insp-inspector')} colSpan={2}>
               {printing ? (
                 inspectorName || '—'
               ) : (
@@ -498,53 +548,46 @@ export function InspectionSheet({
                   ))}
                 </select>
               )}
-              <CellHandles colId="point" rowId="banner-inspector" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'point', rowId: 'banner-inspector' })}
             </td>
             {useDayStamp ? (
-              <td className="insp-stamp-sign" colSpan={signSpan}>
+              <td {...pickCell(inspCellId('banner-inspector', 'stamp-sign'), 'insp-stamp-sign')} colSpan={signSpan}>
                 <img src={stampSrc} alt={`${chrome.approvalRole} 서명`} />
-                <CellHandles colId="day" rowId="banner-inspector" onCol={resize} onRow={rowResize} />
+                {handles({ colId: 'day', rowId: 'banner-inspector', formCol: 'stamp-sign' })}
               </td>
             ) : null}
           </tr>
           <tr className="insp-cols" data-row-id="cols" style={rowStyle('cols', layout)}>
-            {editItems ? <th className="no-print">순서</th> : null}
-            <th>
+            {showRowTools ? (
+              <th className="chem-edit-col no-print">{formAction === 'row-add' ? '추가' : '삭제'}</th>
+            ) : null}
+            <th {...pickCell(inspCellId('cols', 'equip'))}>
               설비명
-              <CellHandles colId="equip" rowId="cols" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'equip', rowId: 'cols' })}
             </th>
-            <th>
+            <th {...pickCell(inspCellId('cols', 'no'))}>
               NO
-              <CellHandles colId="no" rowId="cols" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'no', rowId: 'cols' })}
             </th>
-            <th>
+            <th {...pickCell(inspCellId('cols', 'point'))}>
               개소
-              <CellHandles colId="point" rowId="cols" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'point', rowId: 'cols' })}
             </th>
-            <th>
+            <th {...pickCell(inspCellId('cols', 'timing'))}>
               시기
-              <CellHandles colId="timing" rowId="cols" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'timing', rowId: 'cols' })}
             </th>
-            <th>
+            <th {...pickCell(inspCellId('cols', 'criteria'))}>
               기준
-              <CellHandles colId="criteria" rowId="cols" onCol={resize} onRow={rowResize} />
+              {handles({ colId: 'criteria', rowId: 'cols' })}
             </th>
-            {editItems ? (
-              <>
-                <th>
-                  입력
-                  <CellHandles colId="kind" rowId="cols" onCol={resize} onRow={rowResize} />
-                </th>
-                <th className="no-print" />
-              </>
-            ) : (
-              days.map((day) => {
+            {days.map((day) => {
                 const date = `${monthPrefix}-${pad2(day)}`
                 return (
                   <th
                     key={day}
                     data-insp-day={day}
-                    className={dayColClass(date, selectedDates, today, printing)}
+                    {...pickCell(inspCellId('cols', 'day'), dayColClass(date, selectedDates, today, printing))}
                   >
                     <button
                       type="button"
@@ -557,11 +600,10 @@ export function InspectionSheet({
                     >
                       {day}
                     </button>
-                    <CellHandles colId="day" rowId="cols" onCol={resize} onRow={rowResize} />
+                    {handles({ colId: 'day', rowId: 'cols' })}
                   </th>
                 )
-              })
-            )}
+              })}
           </tr>
         </thead>
         <tbody>
@@ -576,32 +618,42 @@ export function InspectionSheet({
                 data-item-id={itemId}
                 data-row-id={itemId}
                 style={rowStyle(itemId, layout)}
-                className={draggingItemId === itemId ? 'is-dragging' : undefined}
-                draggable={editItems}
-                onDragStart={() => onItemDragStart(itemId)}
-                onDragOver={(event) => {
-                  if (!editItems) return
-                  event.preventDefault()
-                  onItemDragOver()
-                }}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  onItemDrop(itemId)
-                }}
-                onDragEnd={onItemDragEnd}
               >
-                {editItems ? (
-                  <td className="no-print">
-                    <span className="insp-drag-handle" aria-hidden="true">
-                      <GripVertical size={16} />
-                    </span>
-                    <RowHandle rowId={itemId} onStart={rowResize} />
+                {showRowTools ? (
+                  <td className="chem-edit-col no-print">
+                    <div className="chem-row-tools">
+                      {formAction === 'row-add' ? (
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label="아래에 행 추가"
+                          onClick={() => onInsertItem?.(itemId)}
+                        >
+                          <Plus size={14} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="icon-btn danger-icon"
+                          aria-label="행 삭제"
+                          disabled={equipment.items.length <= 1}
+                          onClick={() => onDeleteItem(itemId)}
+                        >
+                          <Minus size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <RowHandle rowId={itemId} onStart={selectedRows.has(`item-${index}`) ? rowResize : undefined} />
                   </td>
                 ) : null}
                 {index === 0 ? (
-                  <th className="insp-equip" rowSpan={Math.max(1, equipment.items.length)} scope="row">
-                    <CellHandles colId="equip" rowId={itemId} onCol={resize} onRow={rowResize} />
-                    {editItems ? (
+                  <th
+                    {...pickCell(inspCellId('item-0', 'equip'), 'insp-equip')}
+                    rowSpan={Math.max(1, equipment.items.length)}
+                    scope="row"
+                  >
+                    {handles({ colId: 'equip', rowId: itemId, formRow: `item-${index}` })}
+                    {editFields ? (
                       <div className="insp-equip-edit">
                         <input
                           className="insp-sheet-input"
@@ -626,9 +678,9 @@ export function InspectionSheet({
                     )}
                   </th>
                 ) : null}
-                <td>
-                  <CellHandles colId="no" rowId={itemId} onCol={resize} onRow={rowResize} />
-                  {editItems ? (
+                <td {...pickCell(inspCellId(`item-${index}`, 'no'))}>
+                  {handles({ colId: 'no', rowId: itemId, formRow: `item-${index}` })}
+                  {editFields ? (
                     <input
                       className="insp-sheet-input"
                       inputMode="numeric"
@@ -640,9 +692,9 @@ export function InspectionSheet({
                     item.no
                   )}
                 </td>
-                <td className="insp-point">
-                  <CellHandles colId="point" rowId={itemId} onCol={resize} onRow={rowResize} />
-                  {editItems ? (
+                <td {...pickCell(inspCellId(`item-${index}`, 'point'), 'insp-point')}>
+                  {handles({ colId: 'point', rowId: itemId, formRow: `item-${index}` })}
+                  {editFields ? (
                     <input
                       className="insp-sheet-input"
                       value={item.point}
@@ -652,9 +704,9 @@ export function InspectionSheet({
                     item.point
                   )}
                 </td>
-                <td>
-                  <CellHandles colId="timing" rowId={itemId} onCol={resize} onRow={rowResize} />
-                  {editItems ? (
+                <td {...pickCell(inspCellId(`item-${index}`, 'timing'))}>
+                  {handles({ colId: 'timing', rowId: itemId, formRow: `item-${index}` })}
+                  {editFields ? (
                     <select
                       className="insp-sheet-input"
                       value={item.timing}
@@ -667,27 +719,19 @@ export function InspectionSheet({
                     item.timing
                   )}
                 </td>
-                <td className="insp-criteria">
-                  <CellHandles colId="criteria" rowId={itemId} onCol={resize} onRow={rowResize} />
-                  {editItems ? (
-                    <input
-                      className="insp-sheet-input"
-                      value={item.criteria}
-                      onChange={(event) => onUpdateItem(itemId, { criteria: event.target.value })}
-                    />
-                  ) : (
-                    <CriteriaText
-                      text={item.criteria}
-                      highlight={shouldHighlightCriteria(equipment.id, item.no)}
-                    />
-                  )}
-                </td>
-                {editItems ? (
-                  <>
-                    <td>
+                <td {...pickCell(inspCellId(`item-${index}`, 'criteria'), 'insp-criteria')}>
+                  {handles({ colId: 'criteria', rowId: itemId, formRow: `item-${index}` })}
+                  {editFields ? (
+                    <>
+                      <input
+                        className="insp-sheet-input"
+                        value={item.criteria}
+                        onChange={(event) => onUpdateItem(itemId, { criteria: event.target.value })}
+                      />
                       <select
                         className="insp-sheet-input"
                         value={kind}
+                        aria-label="입력 종류"
                         onChange={(event) =>
                           onUpdateItem(itemId, { inputKind: event.target.value as InputKind })
                         }
@@ -696,20 +740,15 @@ export function InspectionSheet({
                         <option value="number">수치</option>
                         <option value="fraction">분수</option>
                       </select>
-                    </td>
-                    <td className="no-print">
-                      <button
-                        className="chip-x insp-row-del"
-                        type="button"
-                        aria-label="항목 삭제"
-                        onClick={() => onDeleteItem(itemId)}
-                      >
-                        <X size={11} strokeWidth={3} />
-                      </button>
-                    </td>
-                  </>
-                ) : (
-                  days.map((day) => {
+                    </>
+                  ) : (
+                    <CriteriaText
+                      text={item.criteria}
+                      highlight={shouldHighlightCriteria(equipment.id, item.no)}
+                    />
+                  )}
+                </td>
+                {days.map((day) => {
                     const date = `${monthPrefix}-${pad2(day)}`
                     const record = recordsByDate.get(date)
                     const mark = record?.results[key] ?? ''
@@ -719,9 +758,12 @@ export function InspectionSheet({
                       <td
                         key={day}
                         data-insp-day={day}
-                        className={dayColClass(date, selectedDates, today, printing)}
+                        {...pickCell(
+                          inspCellId(`item-${index}`, 'day'),
+                          dayColClass(date, selectedDates, today, printing),
+                        )}
                       >
-                        <CellHandles colId="day" rowId={itemId} onCol={resize} onRow={rowResize} />
+                        {handles({ colId: 'day', rowId: itemId, formRow: `item-${index}` })}
                         {kind === 'mark' ? (
                           <button
                             className={`insp-mark${markClass(mark)}`}
@@ -786,17 +828,16 @@ export function InspectionSheet({
                         )}
                       </td>
                     )
-                  })
-                )}
+                  })}
               </tr>
             )
           })}
-          {editItems ? null : (
-            <>
+          <>
               <tr className="insp-status-row" data-row-id="status" style={rowStyle('status', layout)}>
-                <td className="insp-status-label" colSpan={5}>
+                {showRowTools ? <td className="chem-edit-col no-print" /> : null}
+                <td {...pickCell(inspCellId('status', 'label'), 'insp-status-label')} colSpan={5}>
                   점검 이상 유무 확인 (정상 : O, 이상 : X)
-                  <CellHandles colId="criteria" rowId="status" onCol={resize} onRow={rowResize} />
+                  {handles({ colId: 'criteria', rowId: 'status', formCol: 'label' })}
                 </td>
                 {days.map((day) => {
                   const date = `${monthPrefix}-${pad2(day)}`
@@ -805,9 +846,12 @@ export function InspectionSheet({
                     <td
                       key={day}
                       data-insp-day={day}
-                      className={dayColClass(date, selectedDates, today, printing)}
+                      {...pickCell(
+                        inspCellId('status', 'day'),
+                        dayColClass(date, selectedDates, today, printing),
+                      )}
                     >
-                      <CellHandles colId="day" rowId="status" onCol={resize} onRow={rowResize} />
+                      {handles({ colId: 'day', rowId: 'status' })}
                       <button
                         className={`insp-mark${markClass(mark)}`}
                         type="button"
@@ -823,21 +867,22 @@ export function InspectionSheet({
                 })}
               </tr>
               <tr className="insp-foot-head" data-row-id="foot-head" style={rowStyle('foot-head', layout)}>
-                <th>
+                {showRowTools ? <th className="chem-edit-col no-print" /> : null}
+                <th {...pickCell(inspCellId('foot-head', 'date'))}>
                   일자
-                  <CellHandles colId="equip" rowId="foot-head" onCol={resize} onRow={rowResize} />
+                  {handles({ colId: 'equip', rowId: 'foot-head', formCol: 'date' })}
                 </th>
-                <th colSpan={noteSpan}>
+                <th {...pickCell(inspCellId('foot-head', 'note'))} colSpan={noteSpan}>
                   이상 발견 개소 및 조치사항
-                  <CellHandles colId="criteria" rowId="foot-head" onCol={resize} onRow={rowResize} />
+                  {handles({ colId: 'criteria', rowId: 'foot-head', formCol: 'note' })}
                 </th>
-                <th className="insp-foot-date-col" colSpan={dateSpan}>
+                <th {...pickCell(inspCellId('foot-head', 'request'), 'insp-foot-date-col')} colSpan={dateSpan}>
                   생산 요청일자
-                  <CellHandles colId="day" rowId="foot-head" onCol={resize} onRow={rowResize} />
+                  {handles({ colId: 'day', rowId: 'foot-head', formCol: 'request' })}
                 </th>
-                <th className="insp-foot-date-col" colSpan={dateSpan}>
+                <th {...pickCell(inspCellId('foot-head', 'confirm'), 'insp-foot-date-col')} colSpan={dateSpan}>
                   설비 확인일자
-                  <CellHandles colId="day" rowId="foot-head" onCol={resize} onRow={rowResize} />
+                  {handles({ colId: 'day', rowId: 'foot-head', formCol: 'confirm' })}
                 </th>
               </tr>
               {issueRows.length ? (
@@ -848,22 +893,23 @@ export function InspectionSheet({
                   key={`issue-${row.day}`}
                   style={rowStyle(`foot-body-${row.day}`, layout)}
                 >
-                  <td>
+                  {showRowTools ? <td className="chem-edit-col no-print" /> : null}
+                  <td {...pickCell(inspCellId('foot-body', 'date'))}>
                     {row.day}
-                    <CellHandles
-                      colId="equip"
-                      rowId={`foot-body-${row.day}`}
-                      onCol={resize}
-                      onRow={rowResize}
-                    />
+                    {handles({
+                      colId: 'equip',
+                      rowId: `foot-body-${row.day}`,
+                      formCol: 'date',
+                      formRow: 'foot-body',
+                    })}
                   </td>
-                  <td colSpan={noteSpan}>
-                    <CellHandles
-                      colId="criteria"
-                      rowId={`foot-body-${row.day}`}
-                      onCol={resize}
-                      onRow={rowResize}
-                    />
+                  <td {...pickCell(inspCellId('foot-body', 'note'))} colSpan={noteSpan}>
+                    {handles({
+                      colId: 'criteria',
+                      rowId: `foot-body-${row.day}`,
+                      formCol: 'note',
+                      formRow: 'foot-body',
+                    })}
                     <textarea
                       value={row.note}
                       aria-label={`${row.day}일 이상 발견 개소 및 조치사항`}
@@ -872,13 +918,13 @@ export function InspectionSheet({
                       onChange={(event) => onIssueNoteChange(row.day, event.target.value)}
                     />
                   </td>
-                  <td className="insp-foot-date-col" colSpan={dateSpan}>
-                    <CellHandles
-                      colId="day"
-                      rowId={`foot-body-${row.day}`}
-                      onCol={resize}
-                      onRow={rowResize}
-                    />
+                  <td {...pickCell(inspCellId('foot-body', 'request'), 'insp-foot-date-col')} colSpan={dateSpan}>
+                    {handles({
+                      colId: 'day',
+                      rowId: `foot-body-${row.day}`,
+                      formCol: 'request',
+                      formRow: 'foot-body',
+                    })}
                     <input
                       className="insp-foot-date"
                       type="date"
@@ -888,13 +934,13 @@ export function InspectionSheet({
                       onChange={(event) => onRequestDateChange(row.day, event.target.value)}
                     />
                   </td>
-                  <td className="insp-foot-date-col" colSpan={dateSpan}>
-                    <CellHandles
-                      colId="day"
-                      rowId={`foot-body-${row.day}`}
-                      onCol={resize}
-                      onRow={rowResize}
-                    />
+                  <td {...pickCell(inspCellId('foot-body', 'confirm'), 'insp-foot-date-col')} colSpan={dateSpan}>
+                    {handles({
+                      colId: 'day',
+                      rowId: `foot-body-${row.day}`,
+                      formCol: 'confirm',
+                      formRow: 'foot-body',
+                    })}
                     <input
                       className="insp-foot-date"
                       type="date"
@@ -908,26 +954,26 @@ export function InspectionSheet({
                 ))
               ) : (
                 <tr className="insp-foot-body insp-foot-empty" data-row-id="foot-body-empty" style={rowStyle('foot-body-empty', layout)}>
-                  <td>
+                  {showRowTools ? <td className="chem-edit-col no-print" /> : null}
+                  <td {...pickCell(inspCellId('foot-body', 'date'))}>
                     -
-                    <CellHandles colId="equip" rowId="foot-body-empty" onCol={resize} onRow={rowResize} />
+                    {handles({ colId: 'equip', rowId: 'foot-body-empty', formCol: 'date', formRow: 'foot-body' })}
                   </td>
-                  <td colSpan={noteSpan}>
+                  <td {...pickCell(inspCellId('foot-body', 'note'))} colSpan={noteSpan}>
                     -
-                    <CellHandles colId="criteria" rowId="foot-body-empty" onCol={resize} onRow={rowResize} />
+                    {handles({ colId: 'criteria', rowId: 'foot-body-empty', formCol: 'note', formRow: 'foot-body' })}
                   </td>
-                  <td className="insp-foot-date-col" colSpan={dateSpan}>
+                  <td {...pickCell(inspCellId('foot-body', 'request'), 'insp-foot-date-col')} colSpan={dateSpan}>
                     -
-                    <CellHandles colId="day" rowId="foot-body-empty" onCol={resize} onRow={rowResize} />
+                    {handles({ colId: 'day', rowId: 'foot-body-empty', formCol: 'request', formRow: 'foot-body' })}
                   </td>
-                  <td className="insp-foot-date-col" colSpan={dateSpan}>
+                  <td {...pickCell(inspCellId('foot-body', 'confirm'), 'insp-foot-date-col')} colSpan={dateSpan}>
                     -
-                    <CellHandles colId="day" rowId="foot-body-empty" onCol={resize} onRow={rowResize} />
+                    {handles({ colId: 'day', rowId: 'foot-body-empty', formCol: 'confirm', formRow: 'foot-body' })}
                   </td>
                 </tr>
               )}
             </>
-          )}
         </tbody>
       </table>
     </div>
@@ -970,8 +1016,13 @@ function InspectionAllSheet({
   inspectorWarnId,
   chrome,
   formEdit,
+  formAction = null,
   printing,
   sharedLayout,
+  selectedCellIds = [],
+  onSelectCell,
+  onInsertItem,
+  onDeleteItemRow,
   onSelectDate,
   onDaySelectStart,
   onToggleCell,
@@ -1002,8 +1053,13 @@ function InspectionAllSheet({
   inspectorWarnId?: string | null
   chrome: InspSheetChrome
   formEdit: boolean
+  formAction?: ChemFormAction
   printing: boolean
   sharedLayout?: InspFormLayout
+  selectedCellIds?: string[]
+  onSelectCell?: (cellId: string, additive: boolean) => void
+  onInsertItem?: (equipmentId: string, itemId: string) => void
+  onDeleteItemRow?: (equipmentId: string, itemId: string) => void
   onSelectDate: (date: string) => void
   onDaySelectStart?: (date: string, event: PointerEvent<HTMLButtonElement>) => void
   onToggleCell: (equipment: Equipment, day: number, itemNo: number) => void
@@ -1075,10 +1131,14 @@ function InspectionAllSheet({
         chrome={chrome}
         recordsByDate={recordsByDate}
         formEdit={formEdit}
+        formAction={formAction}
         printing={printing}
         layoutOnly={formEdit}
         draggingItemId={null}
         layout={layout}
+        selectedCellIds={selectedCellIds}
+        onSelectCell={onSelectCell}
+        onInsertItem={(itemId) => onInsertItem?.(equipment.id, itemId)}
         onSelectDate={onSelectDate}
         onDaySelectStart={onDaySelectStart}
         onToggleCell={(day, itemNo) => onToggleCell(equipment, day, itemNo)}
@@ -1090,7 +1150,7 @@ function InspectionAllSheet({
         onChromeChange={onChromeChange ?? (() => {})}
         onRenameEquipment={() => {}}
         onUpdateItem={() => {}}
-        onDeleteItem={() => {}}
+        onDeleteItem={(itemId) => onDeleteItemRow?.(equipment.id, itemId)}
         onItemDragStart={() => {}}
         onItemDragOver={() => {}}
         onItemDrop={() => {}}
@@ -1106,36 +1166,7 @@ function InspectionAllSheet({
   )
 }
 
-export function InspectionAllView({
-  catalog,
-  inspections,
-  year,
-  month,
-  days,
-  monthPrefix,
-  today,
-  selectedDates,
-  inspectors,
-  inspectorByEquipment,
-  inspectorWarnId = null,
-  chrome,
-  formEdit = false,
-  printing = false,
-  sharedLayout,
-  onSelectDate,
-  onDaySelectStart,
-  onToggleCell,
-  onSaveReading,
-  onSaveFraction,
-  onToggleDayOk,
-  onChromeChange,
-  onColResizeStart,
-  onRowResizeStart,
-  onIssueNoteChange,
-  onRequestDateChange,
-  onConfirmDateChange,
-  onInspectorChange,
-}: {
+export type InspectionAllViewProps = {
   catalog: Equipment[]
   inspections: InspectionRecord[]
   year: number
@@ -1149,8 +1180,13 @@ export function InspectionAllView({
   inspectorWarnId?: string | null
   chrome: InspSheetChrome
   formEdit?: boolean
+  formAction?: ChemFormAction
   printing?: boolean
   sharedLayout?: InspFormLayout
+  selectedCellIds?: string[]
+  onSelectCell?: (cellId: string, additive: boolean) => void
+  onInsertItem?: (equipmentId: string, itemId: string) => void
+  onDeleteItemRow?: (equipmentId: string, itemId: string) => void
   onSelectDate: (date: string) => void
   onDaySelectStart?: (date: string, event: PointerEvent<HTMLButtonElement>) => void
   onToggleCell: (equipment: Equipment, day: number, itemNo: number) => void
@@ -1171,7 +1207,43 @@ export function InspectionAllView({
   onRequestDateChange: (equipment: Equipment, day: number, value: string) => void
   onConfirmDateChange: (equipment: Equipment, day: number, value: string) => void
   onInspectorChange: (equipment: Equipment, name: string) => void
-}) {
+}
+
+export function InspectionAllView({
+  catalog,
+  inspections,
+  year,
+  month,
+  days,
+  monthPrefix,
+  today,
+  selectedDates,
+  inspectors,
+  inspectorByEquipment,
+  inspectorWarnId = null,
+  chrome,
+  formEdit = false,
+  formAction = null,
+  printing = false,
+  sharedLayout,
+  selectedCellIds = [],
+  onSelectCell,
+  onInsertItem,
+  onDeleteItemRow,
+  onSelectDate,
+  onDaySelectStart,
+  onToggleCell,
+  onSaveReading,
+  onSaveFraction,
+  onToggleDayOk,
+  onChromeChange,
+  onColResizeStart,
+  onRowResizeStart,
+  onIssueNoteChange,
+  onRequestDateChange,
+  onConfirmDateChange,
+  onInspectorChange,
+}: InspectionAllViewProps) {
   const [counts, setCounts] = useState<Record<string, number>>({})
 
   const onPageCount = useCallback((equipmentId: string, count: number) => {
@@ -1215,8 +1287,13 @@ export function InspectionAllView({
             inspectorWarnId={inspectorWarnId}
             chrome={chrome}
             formEdit={formEdit}
+            formAction={formAction}
             printing={printing}
             sharedLayout={sharedLayout}
+            selectedCellIds={selectedCellIds}
+            onSelectCell={onSelectCell}
+            onInsertItem={onInsertItem}
+            onDeleteItemRow={onDeleteItemRow}
             onSelectDate={onSelectDate}
             onDaySelectStart={onDaySelectStart}
             onToggleCell={onToggleCell}

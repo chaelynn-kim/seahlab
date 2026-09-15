@@ -24,6 +24,7 @@ export interface UserProfile {
   email: string
   name: string
   department: string
+  photoURL?: string
 }
 
 export interface InspectionRecord {

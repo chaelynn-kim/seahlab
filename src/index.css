@@ -5,6 +5,7 @@
   --sidebar: #f4f3f1;
   --sidebar-hover: #eceae6;
   --header: #2a2a2a;
+  --seah-ink: #3a4850;
   --bg: #f4f3f1;
   --card: #ffffff;
   --text: #1a1a1a;
@@ -71,9 +72,6 @@ a {
   color: #fff;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 20px;
 }
 
 .header-left,
@@ -83,6 +81,17 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 0 14px;
 }
 
 .menu-btn {
@@ -96,63 +105,37 @@ a {
 }
 
 .seah-logo {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.38em;
-  color: #fff;
-  font-family: Arial, Helvetica, "Nimbus Sans", sans-serif;
-  font-weight: 700;
-  font-size: 20px;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  white-space: nowrap;
+  display: block;
+  height: 22px;
+  width: auto;
+  max-width: min(200px, 46vw);
+  object-fit: contain;
   user-select: none;
-}
-
-.seah-logo-word {
-  font-weight: 800;
-}
-
-.seah-logo-e {
-  position: relative;
-  display: inline-block;
-}
-
-.seah-logo-chevron {
-  position: absolute;
-  left: 50%;
-  top: -0.28em;
-  width: 0.62em;
-  height: 0.36em;
-  transform: translateX(-50%);
-  overflow: visible;
-}
-
-.seah-logo-chevron path {
-  fill: none;
-  stroke: #e84e33;
-  stroke-width: 1.85;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.seah-logo-rest {
-  font-weight: 650;
-  letter-spacing: -0.02em;
 }
 
 .brand-divider {
   width: 1px;
-  height: 22px;
-  background: rgba(255, 255, 255, 0.28);
+  height: var(--header-height);
+  background: rgba(255, 255, 255, 0.16);
   flex-shrink: 0;
 }
 
 .brand-title {
-  font-size: 16px;
+  display: flex;
+  align-items: center;
+  margin-right: auto;
+  padding-left: 24px;
+  height: 22px;
+  font-size: 18px;
   font-weight: 700;
+  line-height: 22px;
+  letter-spacing: -0.02em;
   color: #fff;
   white-space: nowrap;
+}
+
+.header-right {
+  padding-right: 20px;
 }
 
 .user-chip {
@@ -165,24 +148,38 @@ a {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--accent);
+  background: #1f1f1f;
+  color: #fff;
   display: grid;
   place-items: center;
-  font-size: 13px;
-  font-weight: 700;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
-.user-chip span {
+.avatar.has-photo {
+  background: #2a2a2a;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.user-chip > span:last-child {
   display: block;
   line-height: 1.2;
 }
 
 .user-chip .name {
+  display: block;
   font-size: 13px;
   font-weight: 700;
 }
 
 .user-chip .meta {
+  display: block;
   font-size: 11px;
   color: #cfcfcf;
 }
@@ -211,55 +208,111 @@ a {
 }
 
 .login-screen {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
+  overflow: hidden;
   padding: 24px;
-  background: var(--bg);
+  background: #2a2a2a;
 }
 
-.login-card {
-  width: min(420px, 100%);
-  padding: 32px 28px;
-  border-radius: 20px;
-  background: #fff;
-  box-shadow: var(--shadow);
-}
-
-.login-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.login-brand .seah-logo {
-  color: var(--header);
-}
-
-.login-brand strong {
-  font-size: 20px;
-}
-
-.login-card h1 {
-  margin: 0 0 8px;
-  font-size: 22px;
-}
-
-.login-card p {
-  margin: 0 0 20px;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-.login-btn {
+.login-pattern {
+  position: absolute;
+  inset: 0;
   width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.12;
+}
+
+.login-panel {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  padding: 48px 36px 40px;
+  border: 1px solid #ececec;
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgb(0 0 0 / 32%);
+  text-align: center;
+}
+
+.login-lockup {
+  display: flex;
   justify-content: center;
-  min-height: 44px;
+  margin-bottom: 28px;
+}
+
+.login-lockup .seah-logo {
+  height: 30px;
+  width: auto;
+  max-width: min(240px, 100%);
+}
+
+.login-panel h1 {
+  margin: 0 0 20px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #4a4a4a;
+}
+
+.login-divider {
+  width: 100%;
+  height: 3px;
+  margin: 0 0 18px;
+  border: 0;
+  background: #e0ddd8;
+}
+
+.login-panel p {
+  margin: 0 0 28px;
+  color: #8b8b8b;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.login-google-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 14px 32px;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f06a48 0%, #e04a2a 52%, #d03f20 100%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgb(224 74 42 / 32%);
+}
+
+.login-google-btn:hover {
+  background: linear-gradient(180deg, #e85d3c 0%, #c73e22 52%, #b5361c 100%);
+}
+
+.login-google-badge {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.login-google-mark {
+  width: 14px;
+  height: 14px;
 }
 
 .login-error {
-  margin: 12px 0 0 !important;
+  margin: 14px 0 0 !important;
   color: var(--warn) !important;
   font-weight: 700;
 }
@@ -333,9 +386,12 @@ a {
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - var(--header-height));
   background: var(--sidebar);
   border-right: 1px solid var(--border);
-  padding: 20px 14px;
+  padding: 20px 14px 16px;
 }
 
 .nav-kicker {
@@ -350,6 +406,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1 1 auto;
 }
 
 .nav-item {
@@ -377,6 +434,42 @@ a {
   color: var(--text);
 }
 
+.sidebar-contact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  padding: 10px 10px 10px 8px;
+  color: #2a2a2a;
+}
+
+.sidebar-contact .avatar {
+  background: #eceae6;
+  color: #2a2a2a;
+}
+
+.sidebar-contact-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.sidebar-contact .name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2a2a2a;
+}
+
+.sidebar-contact .meta {
+  display: block;
+  font-size: 11px;
+  color: #6b6b6b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .main {
   flex: 1;
   min-width: 0;
@@ -400,17 +493,34 @@ a {
 .app-shell:has(.is-compose) .main:has(.chem-page),
 .app-shell:has(.is-compose) .main:has(.insp-page) {
   min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
 }
 
 .app-shell:has(.is-compose) .main {
   padding: 8px 10px 10px;
+  overflow: hidden;
+}
+
+.is-compose.chem-page,
+.is-compose.insp-page {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .is-compose .page-head {
   display: none;
 }
 
+.is-compose .chem-toolbar {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
 .is-compose .chem-sheet-tools {
+  flex-shrink: 0;
   margin-bottom: 8px;
 }
 
@@ -1860,6 +1970,19 @@ a {
     place-items: center;
   }
 
+  .header-brand {
+    width: auto;
+    padding: 0 12px 0 16px;
+  }
+
+  .brand-divider {
+    height: 22px;
+  }
+
+  .brand-title {
+    padding-left: 12px;
+  }
+
   .sidebar {
     position: fixed;
     z-index: 40;
@@ -1963,16 +2086,17 @@ a {
 
 @media (max-width: 720px) {
   .seah-logo {
-    font-size: 17px;
+    height: 20px;
   }
 
   .brand-title {
-    font-size: 14px;
+    height: 20px;
+    font-size: 16px;
+    line-height: 20px;
   }
 }
 
 @media (max-width: 640px) {
-  .seah-logo-rest,
   .brand-divider {
     display: none;
   }
@@ -1982,7 +2106,7 @@ a {
   }
 
   .user-chip .name {
-    max-width: 88px;
+    max-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2251,19 +2375,6 @@ a {
   color: var(--warn);
 }
 
-.insp-print-btn {
-  background: #1a1a1a;
-  border-color: #1a1a1a;
-  color: #fff;
-}
-
-.chem-doc-btn.insp-print-btn:hover:not(:disabled),
-.chem-doc-btn.insp-print-btn:active:not(:disabled) {
-  background: #000;
-  border-color: #000;
-  color: #fff;
-}
-
 .insp-sheet-progress {
   margin: 0 auto 0 0;
   font-size: 13px;
@@ -2416,23 +2527,29 @@ a {
 .insp-sheet.is-form-edit td {
   position: relative;
   overflow: visible;
+  user-select: none;
+}
+
+.insp-sheet.is-form-edit th.is-cell-on,
+.insp-sheet.is-form-edit td.is-cell-on {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.insp-sheet .is-cell-font .insp-sheet-input,
+.insp-sheet .is-cell-font .insp-inspector-select,
+.insp-sheet .is-cell-font .insp-mark,
+.insp-sheet .is-cell-font .insp-reading,
+.insp-sheet .is-cell-font .insp-fraction input,
+.insp-sheet .is-cell-font button,
+.insp-sheet .is-cell-font textarea,
+.insp-sheet .is-cell-font input {
+  font-size: inherit;
 }
 
 .insp-sheet.is-form-edit .chem-col-handle,
 .insp-sheet.is-form-edit .chem-row-handle {
   z-index: 6;
-}
-
-.insp-sheet.is-form-edit .chem-col-handle {
-  width: 14px;
-  right: -7px;
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-.insp-sheet.is-form-edit .chem-row-handle {
-  height: 14px;
-  bottom: -7px;
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .insp-sheet.is-form-edit .insp-mark,
@@ -3009,11 +3126,12 @@ body.insp-day-selecting {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6mm;
-  overflow: hidden;
+  overflow: visible;
   overflow-anchor: none;
   width: 100%;
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 1 auto;
+  box-sizing: border-box;
+  min-height: 210mm;
   margin: 0;
 }
 
@@ -3032,7 +3150,7 @@ body.insp-day-selecting {
   min-height: 0;
   overflow: auto;
   gap: 48px;
-  padding: 44px 0 16px;
+  padding: 48px 20px 20px;
 }
 
 .chem-page-stack {
@@ -3043,19 +3161,30 @@ body.insp-day-selecting {
   min-height: 0;
   overflow: auto;
   gap: 48px;
-  padding: 44px 0 16px;
+  padding: 48px 20px 20px;
+}
+
+.chem-page-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .chem-stack-paper {
   position: relative;
   flex: 0 0 auto;
-  min-height: 198mm;
+  height: auto;
+  min-height: 210mm;
   overflow: visible;
 }
 
 .chem-all-stack .chem-sheet,
 .chem-page-stack .chem-sheet {
-  min-height: 198mm;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .chem-all-stack .chem-sheet,
@@ -3066,6 +3195,37 @@ body.insp-day-selecting {
 .chem-page-stack .chem-table-wrap {
   overflow: visible;
   height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.chem-paper.is-page-on,
+.chem-stack-paper.is-page-on {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.chem-page-del {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
+  cursor: pointer;
+}
+
+.chem-page-del:hover {
+  background: var(--accent-hover, #c45a28);
 }
 
 .chem-sheet-tools {
@@ -3093,7 +3253,7 @@ body.insp-day-selecting {
   flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 0;
+  min-height: 198mm;
   color: #111;
 }
 
@@ -3116,9 +3276,29 @@ body.insp-day-selecting {
   overflow: visible !important;
 }
 
-.chem-print-probe .chem-table tbody td,
-.chem-print-probe .chem-table tbody td input,
-.chem-print-probe .chem-table tbody td textarea {
+.chem-print-probe .chem-chrome-input {
+  border: 0 !important;
+  outline: none !important;
+  padding: 0 2px !important;
+  background: transparent !important;
+}
+
+.chem-print-probe .chem-th-edit {
+  padding: 1px !important;
+}
+
+.chem-print-probe .chem-qty.empty-qty em,
+.chem-print-probe .chem-col-handle,
+.chem-print-probe .chem-row-handle,
+.chem-print-probe .chem-edit-col {
+  display: none !important;
+}
+
+.chem-print-probe.is-collapse-body .chem-table tbody tr,
+.chem-print-probe.is-collapse-body .chem-table tbody td,
+.chem-print-probe.is-collapse-body .chem-table tbody td input,
+.chem-print-probe.is-collapse-body .chem-table tbody td textarea {
+  height: auto !important;
   min-height: 0 !important;
 }
 
@@ -3187,10 +3367,10 @@ body.insp-day-selecting {
 }
 
 body.chem-form-edit .chem-chrome-input {
-  border: 1px dashed var(--accent);
+  outline: 1px dashed var(--accent);
+  outline-offset: 1px;
   background: #fff8f4;
   border-radius: 4px;
-  padding: 1px 4px;
 }
 
 .chem-title-row .chem-chrome-input {
@@ -3268,6 +3448,21 @@ body.chem-form-edit .chem-chrome-input {
 .chem-doc-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.chem-doc-btn.insp-print-btn {
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+  color: #fff;
+}
+
+.chem-doc-btn.insp-print-btn:hover:not(:disabled),
+.chem-doc-btn.insp-print-btn:active:not(:disabled),
+.chem-doc-btn.insp-print-btn:focus,
+.chem-doc-btn.insp-print-btn:focus-visible {
+  background: #000;
+  border-color: #000;
+  color: #fff;
 }
 
 .chem-doc-btn.chem-doc-save img {
@@ -3565,7 +3760,6 @@ body.chem-form-edit .chem-chrome-input {
 }
 
 .chem-table.is-editing {
-  height: 100%;
   min-width: 0;
 }
 
@@ -3873,9 +4067,8 @@ body.chem-form-edit .chem-chrome-input {
 
 .chem-table.is-editing tbody td textarea.chem-wrap,
 .chem-table.is-editing tbody td input {
-  field-sizing: content;
-  height: auto;
-  max-height: none;
+  height: 100%;
+  max-height: 100%;
 }
 
 .chem-table.is-editing thead tr.is-row-locked th .chem-th-input {
@@ -3897,7 +4090,7 @@ body.chem-form-edit .chem-chrome-input {
 }
 
 .chem-th-edit {
-  padding: 4px 10px 10px 4px;
+  padding: 1px;
 }
 
 .chem-th-input {
@@ -4070,6 +4263,17 @@ body.insp-printing .insp-unit-hint {
   display: none !important;
 }
 
+body.chem-printing .chem-page-guides,
+body.chem-printing .chem-page-guide,
+body.chem-printing .chem-page-del {
+  display: none !important;
+}
+
+body.chem-printing .chem-paper.is-page-on,
+body.chem-printing .chem-stack-paper.is-page-on {
+  outline: none !important;
+}
+
 body.chem-resizing,
 body.chem-selecting-cells {
   user-select: none;
@@ -4094,7 +4298,10 @@ body.chem-resizing-row * {
   .header,
   .sidebar,
   .overlay,
-  .no-print {
+  .no-print,
+  .chem-page-guides,
+  .chem-page-guide,
+  .chem-page-del {
     display: none !important;
   }
 
@@ -4151,19 +4358,22 @@ body.chem-resizing-row * {
 
   .chem-stack-paper,
   .chem-stack-paper .chem-sheet {
-    min-height: 198mm !important;
-    height: 198mm !important;
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
-    display: flex !important;
-    flex-direction: column !important;
+    height: auto !important;
+    min-height: 0 !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+    display: block !important;
   }
 
   .chem-stack-paper .chem-frame {
-    flex: 1 1 auto !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
+    height: auto !important;
     border: 2.5px solid #111 !important;
+  }
+
+  .chem-paper.is-page-on,
+  .chem-stack-paper.is-page-on {
+    outline: none !important;
   }
 
   .insp-page,
@@ -4334,16 +4544,9 @@ body.chem-resizing-row * {
     page-break-inside: avoid;
   }
 
-  .chem-table tbody tr,
-  .chem-table tbody td {
-    min-height: 0 !important;
-    max-height: none !important;
-    overflow: visible !important;
-  }
-
   .chem-table th,
   .chem-table td {
-    overflow: visible !important;
+    overflow: hidden !important;
   }
 
   .chem-table tbody td textarea.chem-wrap,

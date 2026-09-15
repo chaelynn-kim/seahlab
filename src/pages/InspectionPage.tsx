@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
 import { ChevronLeft, ChevronRight, ClipboardCheck, Pencil, Plus, Printer, Redo2, RotateCcw, TableProperties, Undo2, X } from 'lucide-react'
 import { InspectionAllView, InspectionSheet } from '../components/InspectionSheet'
+import { ChemFormEditBar, type ChemFormAction } from '../components/ChemLedgerTable'
 import { ComposeModeButton } from '../components/ComposeModeButton'
 import { InspTipButton } from '../components/InspTipButton'
 import { PageHead } from '../components/layout/PageHead'
 import diskette from '../assets/diskette.png'
 import { useAppData } from '../context/AppDataContext'
-import { createEquipment, markEquipmentRemoved, withItemIds } from '../lib/catalog'
+import { createCheckItem, createEquipment, markEquipmentRemoved, withItemIds } from '../lib/catalog'
 import {
+  clampInspCellFont,
+  defaultInspCellFont,
   DEFAULT_INSP_COL_PCT,
   INSP_ALL_TAB_ID,
   loadInspFormLayout,
   loadInspSheetChrome,
-  saveInspFormLayout,
   saveInspFormLayoutAll,
   saveInspSheetChrome,
   type InspColId,
@@ -104,6 +106,8 @@ export function InspectionPage() {
   const [confirmDate, setConfirmDate] = useState('')
   const [tabEditMode, setTabEditMode] = useState(false)
   const [formEdit, setFormEdit] = useState(false)
+  const [formAction, setFormAction] = useState<ChemFormAction>(null)
+  const [selectedCellIds, setSelectedCellIds] = useState<string[]>([])
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [printing, setPrinting] = useState(false)
@@ -157,12 +161,23 @@ export function InspectionPage() {
     setLayout(loadInspFormLayout(seedId))
     setLayoutDirty(false)
     setFormEdit(false)
+    setFormAction(null)
+    setSelectedCellIds([])
     historyRef.current = { past: [], future: [] }
     lastHistorySourceRef.current = null
     resizeSnapRef.current = null
     setCanUndo(false)
     setCanRedo(false)
   }, [equipmentId])
+
+  useEffect(() => {
+    document.body.classList.toggle('chem-form-edit', formEdit)
+    if (!formEdit) {
+      setFormAction(null)
+      setSelectedCellIds([])
+    }
+    return () => document.body.classList.remove('chem-form-edit')
+  }, [formEdit])
 
   useEffect(() => {
     const onMove = (event: globalThis.MouseEvent) => {
@@ -637,6 +652,57 @@ export function InspectionPage() {
     )
   }
 
+  const renumberItems = (items: CheckItem[]): CheckItem[] =>
+    items.map((item, index) => ({ ...item, no: index + 1 }))
+
+  const insertItemAfter = (targetEqId: string, afterItemId: string) => {
+    updateCatalog((list) => {
+      const source = list.find((eq) => eq.id === targetEqId)
+      const idx = source?.items.findIndex((item) => (item.id ?? '') === afterItemId) ?? -1
+      if (idx < 0) return list
+      const targets = new Set(showAll ? list.map((eq) => eq.id) : [targetEqId])
+      return list.map((eq) => {
+        if (!targets.has(eq.id) || eq.items.length === 0) return eq
+        const at = Math.min(idx, eq.items.length - 1)
+        const next = [...eq.items]
+        next.splice(at + 1, 0, createCheckItem(next))
+        return { ...eq, items: renumberItems(next) }
+      })
+    })
+  }
+
+  const deleteItemAt = (targetEqId: string, itemId: string) => {
+    updateCatalog((list) => {
+      const source = list.find((eq) => eq.id === targetEqId)
+      const idx = source?.items.findIndex((item) => (item.id ?? '') === itemId) ?? -1
+      if (idx < 0) return list
+      const targets = new Set(showAll ? list.map((eq) => eq.id) : [targetEqId])
+      return list.map((eq) => {
+        if (!targets.has(eq.id) || eq.items.length <= 1) return eq
+        const at = Math.min(idx, eq.items.length - 1)
+        const next = eq.items.filter((_, index) => index !== at)
+        return { ...eq, items: renumberItems(next) }
+      })
+    })
+  }
+
+  const bumpCellFont = (delta: number) => {
+    if (selectedCellIds.length === 0) return
+    const ids = [...selectedCellIds]
+    const reference = ids[ids.length - 1]
+    const fonts = layout.cellFonts ?? {}
+    const current = fonts[reference] ?? defaultInspCellFont(reference)
+    const mixed = ids.some((id) => (fonts[id] ?? defaultInspCellFont(id)) !== current)
+    const size = clampInspCellFont(mixed ? current : current + delta)
+    pushFormHistory(`font:${[...ids].sort().join(',')}`)
+    setLayout((prev) => {
+      const nextFonts = { ...(prev.cellFonts ?? {}) }
+      for (const id of ids) nextFonts[id] = size
+      return { ...prev, cellFonts: nextFonts }
+    })
+    setLayoutDirty(true)
+  }
+
   const reorderEquipment = (fromId: string, toId: string) => {
     if (fromId === toId) return
     updateCatalog((prev) => {
@@ -682,8 +748,7 @@ export function InspectionPage() {
     if (catalogDirty) saveCatalog(catalog, inspectors)
     if (chromeDirty) saveInspSheetChrome(chrome)
     if (layoutDirty) {
-      if (showAll) saveInspFormLayoutAll(catalog.map((item) => item.id), layout)
-      else if (equipment) saveInspFormLayout(equipment.id, layout)
+      saveInspFormLayoutAll(catalog.map((item) => item.id), layout)
     }
     setCatalogDirty(false)
     setChromeDirty(false)
@@ -939,7 +1004,23 @@ export function InspectionPage() {
         <>
           <div className="chem-sheet-tools no-print">
             {formEdit ? (
-              <div className="chem-sheet-tool-btns">
+              <>
+                <ChemFormEditBar
+                  action={formAction}
+                  onAction={setFormAction}
+                  selectedFont={
+                    selectedCellIds.length
+                      ? (layout.cellFonts?.[selectedCellIds[selectedCellIds.length - 1]] ??
+                        defaultInspCellFont(selectedCellIds[selectedCellIds.length - 1]))
+                      : null
+                  }
+                  canFont={selectedCellIds.length > 0}
+                  onFont={bumpCellFont}
+                  showColumns={false}
+                  showPages={false}
+                  rowScope={showAll ? 'all' : 'current'}
+                />
+                <div className="chem-sheet-tool-btns">
                 <ComposeModeButton active={compose} onToggle={toggleCompose} />
                 <button
                   className="chem-doc-btn chem-doc-icon"
@@ -967,7 +1048,8 @@ export function InspectionPage() {
                   <TableProperties size={14} />
                   양식 수정 완료
                 </button>
-              </div>
+                </div>
+              </>
             ) : (
               <div className="chem-sheet-tool-btns">
                 <InspTipButton />
@@ -977,6 +1059,8 @@ export function InspectionPage() {
                   type="button"
                   onClick={() => {
                     setTabEditMode(false)
+                    setFormAction(null)
+                    setSelectedCellIds([])
                     clearFormHistory()
                     setFormEdit(true)
                   }}
@@ -1034,8 +1118,21 @@ export function InspectionPage() {
               inspectorWarnId={needInspectorId}
               chrome={chrome}
               formEdit={formEdit}
+              formAction={formAction}
               printing={printing}
               sharedLayout={layout}
+              selectedCellIds={selectedCellIds}
+              onSelectCell={(cellId, additive) => {
+                setSelectedCellIds((prev) =>
+                  additive
+                    ? prev.includes(cellId)
+                      ? prev.filter((id) => id !== cellId)
+                      : [...prev, cellId]
+                    : [cellId],
+                )
+              }}
+              onInsertItem={(eqId, itemId) => insertItemAfter(eqId, itemId)}
+              onDeleteItemRow={(eqId, itemId) => deleteItemAt(eqId, itemId)}
               onSelectDate={selectSingleDate}
               onDaySelectStart={startDaySelect}
               onToggleCell={toggleCell}
@@ -1071,9 +1168,21 @@ export function InspectionPage() {
             chrome={chrome}
             recordsByDate={recordsByDate}
             formEdit={formEdit}
+            formAction={formAction}
             printing={printing}
             draggingItemId={draggingItemId}
             layout={layout}
+            selectedCellIds={selectedCellIds}
+            onSelectCell={(cellId, additive) => {
+              setSelectedCellIds((prev) =>
+                additive
+                  ? prev.includes(cellId)
+                    ? prev.filter((id) => id !== cellId)
+                    : [...prev, cellId]
+                  : [cellId],
+              )
+            }}
+            onInsertItem={(itemId) => insertItemAfter(equipment.id, itemId)}
             onSelectDate={selectSingleDate}
             onDaySelectStart={startDaySelect}
             onToggleCell={(day, itemNo) => toggleCell(equipment, day, itemNo)}
@@ -1085,11 +1194,7 @@ export function InspectionPage() {
             onChromeChange={updateChrome}
             onRenameEquipment={(patch) => updateEquipment(equipment.id, patch)}
             onUpdateItem={updateItem}
-            onDeleteItem={(itemId) =>
-              updateEquipment(equipment.id, {
-                items: equipment.items.filter((row) => (row.id ?? '') !== itemId),
-              })
-            }
+            onDeleteItem={(itemId) => deleteItemAt(equipment.id, itemId)}
             onItemDragStart={(itemId) => {
               dragItemId.current = itemId
               setDraggingItemId(itemId)

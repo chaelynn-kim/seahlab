@@ -1,7 +1,8 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type RefObject } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type RefObject } from 'react'
 import type { ChemicalActivities, ChemicalLedger, ChemicalLedgerMeta } from '../types'
 import { formatContentPercent } from '../lib/chemicals'
 import {
+  CHEM_BODY_ROW_KEY,
   CHEM_CELL,
   CHROME_META_LEFT,
   CHROME_META_ROW,
@@ -9,11 +10,15 @@ import {
   DEFAULT_CHEM_CHROME,
   loadChemCellFonts,
   loadChemFormColumns,
+  loadChemPageCounts,
   loadChemSheetChrome,
   loadHeaderRowHeights,
+  normalizePageCounts,
+  pageChunksFromCounts,
   type ChemFormColumn,
   type ChemSheetChrome,
 } from '../lib/chemFormLayout'
+import { X } from 'lucide-react'
 import { ChemLedgerTable, RowHandle, type ChemFormAction } from './ChemLedgerTable'
 
 export const PRINT_PAGE_HEIGHT_MM = 198
@@ -23,9 +28,13 @@ export function printPagePx(): number {
   return (PRINT_PAGE_HEIGHT_MM * 96) / 25.4
 }
 
-function measurePrintSheetHeight(sheet: HTMLElement): number {
+function withChemPrintProbe<T>(
+  sheet: HTMLElement,
+  run: (clone: HTMLElement) => T,
+  collapseBody = false,
+): T {
   const host = document.createElement('div')
-  host.className = 'chem-print-probe'
+  host.className = collapseBody ? 'chem-print-probe is-collapse-body' : 'chem-print-probe'
   const clone = sheet.cloneNode(true) as HTMLElement
   clone.querySelectorAll('.no-print, .chem-page-guides').forEach((node) => node.remove())
   const sourceFields = sheet.querySelectorAll('textarea, input')
@@ -39,14 +48,24 @@ function measurePrintSheetHeight(sheet: HTMLElement): number {
       target.value = source.value
     }
   })
-  clone.querySelectorAll<HTMLElement>('tbody tr, tbody td').forEach((node) => {
-    node.style.minHeight = '0'
-  })
+  if (collapseBody) {
+    clone.querySelectorAll<HTMLElement>('tbody tr, tbody td').forEach((node) => {
+      node.style.height = ''
+      node.style.minHeight = '0'
+      node.style.maxHeight = ''
+    })
+  }
   host.appendChild(clone)
   document.body.appendChild(host)
-  const height = Math.max(clone.scrollHeight, clone.getBoundingClientRect().height)
+  const result = run(clone)
   host.remove()
-  return height
+  return result
+}
+
+function measurePrintSheetHeight(sheet: HTMLElement): number {
+  return withChemPrintProbe(sheet, (clone) =>
+    Math.max(clone.scrollHeight, clone.getBoundingClientRect().height),
+  )
 }
 
 export function countChemPrintPages(sheet: HTMLElement): number {
@@ -56,6 +75,20 @@ export function countChemPrintPages(sheet: HTMLElement): number {
 function offsetH(root: HTMLElement, selector: string): number {
   const node = root.querySelector(selector)
   return node instanceof HTMLElement ? node.getBoundingClientRect().height : 0
+}
+
+function printChromeHeight(root: HTMLElement): number {
+  return (
+    offsetH(root, '.chem-legal') +
+    offsetH(root, '.chem-title-row') +
+    offsetH(root, '.chem-meta') +
+    offsetH(root, 'thead') +
+    offsetH(root, '.chem-foot')
+  )
+}
+
+function printBodyAvail(sheet: HTMLElement): number {
+  return withChemPrintProbe(sheet, (clone) => Math.max(48, printPagePx() - printChromeHeight(clone)), true)
 }
 
 function chromeRowStyle(height: number | undefined): CSSProperties | undefined {
@@ -132,13 +165,26 @@ export function extraChemPrintGuides(sheet: HTMLElement, rowCount: number): numb
   return Math.max(0, chunkLedgerRows(sheet, rowCount).length - 1)
 }
 
-function sameRowChunks(
-  left: { start: number; end: number }[],
-  right: { start: number; end: number }[],
-): boolean {
+const MIN_FILL_ROW_PX = 16
+
+function assignRef<T>(ref: RefObject<T | null> | undefined, node: T | null) {
+  if (ref) (ref as { current: T | null }).current = node
+}
+
+export function ChemPageDeleteButton({ onDelete }: { onDelete: () => void }) {
   return (
-    left.length === right.length &&
-    left.every((chunk, index) => chunk.start === right[index].start && chunk.end === right[index].end)
+    <button
+      type="button"
+      className="chem-page-del no-print"
+      aria-label="이 페이지 삭제"
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation()
+        onDelete()
+      }}
+    >
+      <X size={14} />
+    </button>
   )
 }
 
@@ -281,6 +327,12 @@ export function ChemLedgerSheet({
 }) {
   const classWords = activeClassWords(ledger.meta)
   const caption = pageLabel || ledger.tabName || ledger.meta.productName || '새 물질'
+  const ownSheetRef = useRef<HTMLFormElement>(null)
+  const ownWrapRef = useRef<HTMLDivElement>(null)
+  const [localFill, setLocalFill] = useState<number | null>(null)
+  const [overflowGuides, setOverflowGuides] = useState(0)
+  const lockedBody = rowHeights[CHEM_BODY_ROW_KEY] != null
+  const fillH = fillRowHeight ?? localFill
   const pickChrome = (cellId: string) => {
     if (!formEdit || formAction || !onSelectCells) return undefined
     return () => onSelectCells([cellId])
@@ -293,22 +345,73 @@ export function ChemLedgerSheet({
   const chromeClass = (base: string, cellId: string) =>
     `${base}${formEdit && selectedCellIds.includes(cellId) ? ' is-cell-on' : ''}${cellFonts[cellId] != null ? ' is-cell-font' : ''}`
 
+  useLayoutEffect(() => {
+    if (lockedBody || fillRowHeight != null) {
+      if (fillRowHeight == null) setLocalFill(null)
+      return
+    }
+    const wrap = ownWrapRef.current
+    if (!wrap) return
+    const measure = () => {
+      if (document.body.classList.contains('chem-resizing-row')) return
+      if (document.body.classList.contains('chem-printing')) return
+      const sheet = ownSheetRef.current
+      if (!sheet) return
+      const n = Math.max(1, wrap.querySelectorAll('tbody tr').length)
+      const available = printBodyAvail(sheet)
+      if (available <= 0) return
+      const next = Math.max(MIN_FILL_ROW_PX, available / n)
+      setLocalFill((prev) => (prev != null && Math.abs(prev - next) < 0.05 ? prev : next))
+    }
+    measure()
+    const observer = new ResizeObserver(() => {
+      window.requestAnimationFrame(measure)
+    })
+    observer.observe(wrap)
+    return () => observer.disconnect()
+  }, [lockedBody, fillRowHeight, ledger.rows.length, formEdit, columns, chrome, rowHeights])
+
+  useLayoutEffect(() => {
+    const sheet = ownSheetRef.current
+    if (!sheet) return
+    const update = () => {
+      if (document.body.classList.contains('chem-printing')) return
+      const next = Math.max(0, countChemPrintPages(sheet) - 1)
+      setOverflowGuides((prev) => (prev === next ? prev : next))
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(sheet)
+    return () => observer.disconnect()
+  }, [ledger.rows.length, fillH, formEdit, columns, chrome, rowHeights, cellFonts])
+
+  const guideCount = Math.max(extraGuides, overflowGuides)
+  const printTotal = Math.max(pageTotal ?? 1, pageStart + guideCount)
+  const showHeadBadge = Boolean(showFirstGuide || (guideCount > 0 && (pageTotal ?? 1) <= 1))
+
   return (
-    <form className="chem-sheet" ref={sheetRef} onSubmit={(event) => event.preventDefault()}>
-      {showPageGuides ? (
+    <form
+      className="chem-sheet"
+      ref={(node) => {
+        ownSheetRef.current = node
+        assignRef(sheetRef, node)
+      }}
+      onSubmit={(event) => event.preventDefault()}
+    >
+      {showPageGuides || showHeadBadge || guideCount > 0 ? (
         <div className="chem-page-guides no-print" aria-hidden="true">
-          {showFirstGuide ? (
+          {showHeadBadge ? (
             <div className="chem-page-guide is-first">
-              <span>{stackPageLabel(caption, pageStart, pageTotal)}</span>
+              <span>{stackPageLabel(caption, pageStart, printTotal)}</span>
             </div>
           ) : null}
-          {Array.from({ length: extraGuides }, (_, index) => (
+          {Array.from({ length: guideCount }, (_, index) => (
             <div
               key={index}
               className="chem-page-guide"
               style={{ top: `${PRINT_PAGE_HEIGHT_MM * (index + 1)}mm` }}
             >
-              <span>{stackPageLabel(caption, pageStart + index + 1, pageTotal)}</span>
+              <span>{stackPageLabel(caption, pageStart + index + 1, printTotal)}</span>
             </div>
           ))}
         </div>
@@ -496,7 +599,13 @@ export function ChemLedgerSheet({
           </div>
         </div>
 
-        <div className="chem-table-wrap" ref={tableWrapRef}>
+        <div
+          className="chem-table-wrap"
+          ref={(node) => {
+            ownWrapRef.current = node
+            assignRef(tableWrapRef, node)
+          }}
+        >
           <ChemLedgerTable
             columns={columns}
             rows={ledger.rows}
@@ -505,7 +614,7 @@ export function ChemLedgerSheet({
             formEdit={formEdit}
             formAction={formAction}
             rowHeights={rowHeights}
-            fillRowHeight={fillRowHeight}
+            fillRowHeight={fillH}
             onUpdateCell={onUpdateCell}
             onDeleteRow={onDeleteRow}
             onInsertRow={onInsertRow}
@@ -558,7 +667,10 @@ function ChemLedgerAllSheet({
   year,
   pageStart,
   pageTotal,
-  onPageCount,
+  pageCounts,
+  selectedPageIndex,
+  onSelectPage,
+  onDeletePage,
   onUpdateLedger,
   formEdit,
   formAction,
@@ -585,7 +697,10 @@ function ChemLedgerAllSheet({
   year: number
   pageStart: number
   pageTotal: number
-  onPageCount: (ledgerId: string, count: number) => void
+  pageCounts: number[]
+  selectedPageIndex?: number | null
+  onSelectPage?: (index: number) => void
+  onDeletePage?: (index: number) => void
   onUpdateLedger: (id: string, patch: Partial<ChemicalLedger>) => void
   formEdit: boolean
   formAction: ChemFormAction
@@ -608,45 +723,34 @@ function ChemLedgerAllSheet({
   selectedCellIds?: string[]
   onSelectCells?: (ids: string[]) => void
 }) {
-  const sheetRef = useRef<HTMLFormElement>(null)
-  const [chunks, setChunks] = useState<{ start: number; end: number }[]>(() => [
-    { start: 0, end: ledger.rows.length },
-  ])
-  const columns = formEdit && sharedColumns ? sharedColumns : loadChemFormColumns(ledger.id)
-  const chrome = formEdit && sharedChrome ? sharedChrome : loadChemSheetChrome(ledger.id)
-  const rowHeights = formEdit && sharedRowHeights ? sharedRowHeights : loadHeaderRowHeights(ledger.id)
-  const fonts = formEdit && cellFonts ? cellFonts : loadChemCellFonts(ledger.id)
+  const columns = sharedColumns ?? loadChemFormColumns(ledger.id)
+  const chrome = sharedChrome ?? loadChemSheetChrome(ledger.id)
+  const rowHeights = sharedRowHeights ?? loadHeaderRowHeights(ledger.id)
+  const fonts = cellFonts ?? loadChemCellFonts(ledger.id)
   const caption = ledger.tabName || ledger.meta.productName || '새 물질'
-
-  useLayoutEffect(() => {
-    const sheet = sheetRef.current
-    if (!sheet) return
-    const update = () => {
-      const next = chunkLedgerRows(sheet, ledger.rows.length)
-      setChunks((prev) => (sameRowChunks(prev, next) ? prev : next))
-      onPageCount(ledger.id, next.length)
-    }
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(sheet)
-    return () => observer.disconnect()
-  }, [ledger.id, ledger.rows, columns, chrome, rowHeights, onPageCount])
+  const pages = pageChunksFromCounts(normalizePageCounts(pageCounts, ledger.rows.length))
 
   const updateMeta = (patch: Partial<ChemicalLedgerMeta>) => {
     onUpdateLedger(ledger.id, { meta: { ...ledger.meta, ...patch } })
   }
 
-  const pages = chunks.length ? chunks : [{ start: 0, end: ledger.rows.length }]
-
   return (
     <>
-      {pages.map((chunk, index) => (
+      {pages.map((chunk, index) => {
+        const pageOn = Boolean(formEdit && selectedPageIndex === index)
+        return (
         <div
           key={`${ledger.id}-p${index}`}
-          className="chem-paper chem-stack-paper"
+          className={`chem-paper chem-stack-paper${pageOn ? ' is-page-on' : ''}`}
           data-chem-stack-id={ledger.id}
           data-chem-name={caption}
+          onMouseDown={() => {
+            if (formEdit) onSelectPage?.(index)
+          }}
         >
+          {pageOn && pages.length > 1 && onDeletePage ? (
+            <ChemPageDeleteButton onDelete={() => onDeletePage(index)} />
+          ) : null}
           <div className="chem-page-guides no-print" aria-hidden="true">
             <div className="chem-page-guide is-first">
               <span>{stackPageLabel(caption, pageStart + index, pageTotal)}</span>
@@ -656,7 +760,7 @@ function ChemLedgerAllSheet({
             ledger={{ ...ledger, rows: ledger.rows.slice(chunk.start, chunk.end) }}
             year={year}
             formEdit={formEdit}
-            formAction={formAction}
+            formAction={pageOn ? formAction : null}
             columns={columns}
             chrome={chrome}
             rowHeights={rowHeights}
@@ -665,14 +769,13 @@ function ChemLedgerAllSheet({
             flashColId={flashColId}
             flashRowId={flashRowId}
             cellFonts={fonts}
-            selectedCellIds={selectedCellIds}
+            selectedCellIds={pageOn ? selectedCellIds : []}
             onSelectCells={onSelectCells}
             showPageGuides={false}
             extraGuides={0}
             pageStart={pageStart + index}
             pageTotal={pageTotal}
             pageLabel={caption}
-            sheetRef={index === 0 ? sheetRef : undefined}
             onChromeChange={formEdit ? onChromeChange : () => {}}
             onUpdateCell={(rowId, column, value) => {
               if (column.key.startsWith('extra:')) {
@@ -714,7 +817,8 @@ function ChemLedgerAllSheet({
             onRowResizeStart={onRowResizeStart}
           />
         </div>
-      ))}
+        )
+      })}
     </>
   )
 }
@@ -743,6 +847,10 @@ export function ChemLedgerAllView({
   cellFonts,
   selectedCellIds,
   onSelectCells,
+  pageCountsById = {},
+  selectedPage,
+  onSelectPage,
+  onDeletePage,
 }: {
   ledgers: ChemicalLedger[]
   year: number
@@ -767,39 +875,50 @@ export function ChemLedgerAllView({
   cellFonts?: Record<string, number>
   selectedCellIds?: string[]
   onSelectCells?: (ids: string[]) => void
+  pageCountsById?: Record<string, number[]>
+  selectedPage?: { ledgerId: string; index: number } | null
+  onSelectPage?: (page: { ledgerId: string; index: number }) => void
+  onDeletePage?: (ledgerId: string, index: number) => void
 }) {
-  const [counts, setCounts] = useState<Record<string, number>>({})
-
-  const onPageCount = useCallback((ledgerId: string, count: number) => {
-    setCounts((prev) => (prev[ledgerId] === count ? prev : { ...prev, [ledgerId]: count }))
-  }, [])
-
   const offsets = useMemo(() => {
     const map: Record<string, number> = {}
     let acc = 0
     for (const item of ledgers) {
       map[item.id] = acc
-      acc += counts[item.id] ?? 1
+      const counts = normalizePageCounts(pageCountsById[item.id] ?? loadChemPageCounts(item.id, item.rows.length), item.rows.length)
+      acc += counts.length
     }
     return map
-  }, [ledgers, counts])
+  }, [ledgers, pageCountsById])
 
   const totalPages = useMemo(
-    () => ledgers.reduce((sum, item) => sum + (counts[item.id] ?? 1), 0),
-    [ledgers, counts],
+    () =>
+      ledgers.reduce((sum, item) => {
+        const counts = normalizePageCounts(pageCountsById[item.id] ?? loadChemPageCounts(item.id, item.rows.length), item.rows.length)
+        return sum + counts.length
+      }, 0),
+    [ledgers, pageCountsById],
   )
 
   return (
     <div className="chem-all-wrap">
       <div className="chem-all-stack">
-        {ledgers.map((ledger) => (
+        {ledgers.map((ledger) => {
+          const counts = normalizePageCounts(
+            pageCountsById[ledger.id] ?? loadChemPageCounts(ledger.id, ledger.rows.length),
+            ledger.rows.length,
+          )
+          return (
           <ChemLedgerAllSheet
             key={ledger.id}
             ledger={ledger}
             year={year}
             pageStart={(offsets[ledger.id] ?? 0) + 1}
-            pageTotal={totalPages}
-            onPageCount={onPageCount}
+            pageTotal={Math.max(1, totalPages)}
+            pageCounts={counts}
+            selectedPageIndex={selectedPage?.ledgerId === ledger.id ? selectedPage.index : null}
+            onSelectPage={(index) => onSelectPage?.({ ledgerId: ledger.id, index })}
+            onDeletePage={(index) => onDeletePage?.(ledger.id, index)}
             onUpdateLedger={onUpdateLedger}
             formEdit={formEdit}
             formAction={formAction}
@@ -822,7 +941,8 @@ export function ChemLedgerAllView({
             selectedCellIds={selectedCellIds}
             onSelectCells={onSelectCells}
           />
-        ))}
+          )
+        })}
       </div>
     </div>
   )

@@ -581,6 +581,11 @@ export function ChemLedgerTable({
       if (anchor === current) return [anchor]
       const a = parseChemBodyCell(anchor)
       const b = parseChemBodyCell(current)
+      const colIdOf = (id: string) => {
+        if (id.startsWith('thead-leaf:')) return id.slice('thead-leaf:'.length)
+        if (id.startsWith('thead-block:')) return id.slice('thead-block:'.length)
+        return parseChemBodyCell(id)?.colId ?? null
+      }
       if (a && b) {
         const r0 = rows.findIndex((row) => row.id === a.rowId)
         const r1 = rows.findIndex((row) => row.id === b.rowId)
@@ -613,6 +618,25 @@ export function ChemLedgerTable({
         const cMax = Math.max(c0, c1)
         const makeId = headerPrefix === 'thead-leaf:' ? chemLeafCell : chemBlockCell
         return columns.slice(cMin, cMax + 1).map((col) => makeId(col.id))
+      }
+      const colA = colIdOf(anchor)
+      const colB = colIdOf(current)
+      if (colA && colB) {
+        const c0 = columns.findIndex((col) => col.id === colA)
+        const c1 = columns.findIndex((col) => col.id === colB)
+        if (c0 < 0 || c1 < 0) return [anchor, current]
+        const cMin = Math.min(c0, c1)
+        const cMax = Math.max(c0, c1)
+        const ids: string[] = []
+        for (let colIndex = cMin; colIndex <= cMax; colIndex += 1) {
+          ids.push(chemLeafCell(columns[colIndex].id))
+        }
+        for (const row of rows) {
+          for (let colIndex = cMin; colIndex <= cMax; colIndex += 1) {
+            ids.push(chemBodyCell(row.id, columns[colIndex].id))
+          }
+        }
+        return ids
       }
       return [anchor, current]
     }
@@ -839,7 +863,7 @@ export function ChemLedgerTable({
           const cellStyle = rowH
             ? savedBody
               ? { height: rowH, minHeight: rowH, maxHeight: rowH }
-              : { minHeight: rowH }
+              : { height: rowH, minHeight: rowH }
             : undefined
           return (
             <tr
@@ -930,38 +954,59 @@ export function ChemLedgerTable({
 export function ChemFormEditBar({
   action,
   onAction,
-  layoutOnly = false,
   selectedFont,
   canFont,
   onFont,
+  onAddPage,
+  showColumns = true,
+  showPages = true,
+  rowScope = 'current',
+  pageCount = 1,
+  selectedPageIndex = 0,
+  onSelectPage,
+  selectedPageLabel,
 }: {
   action: ChemFormAction
   onAction: (next: ChemFormAction) => void
-  layoutOnly?: boolean
   selectedFont?: number | null
   canFont?: boolean
   onFont?: (delta: number) => void
+  onAddPage?: () => void
+  showColumns?: boolean
+  showPages?: boolean
+  rowScope?: 'current' | 'all'
+  pageCount?: number
+  selectedPageIndex?: number
+  onSelectPage?: (index: number) => void
+  selectedPageLabel?: string | null
 }) {
   const toggle = (next: Exclude<ChemFormAction, null>) => {
     onAction(action === next ? null : next)
   }
   const hint =
     action === 'col-add'
-      ? '헤더 칸을 눌러 그 옆에 열을 추가하세요.'
+      ? '선택한 페이지의 헤더 칸을 눌러 그 옆에 열을 추가하세요. 열은 모든 페이지에 공통입니다.'
       : action === 'col-del'
-        ? '삭제할 열의 헤더 칸을 누르세요.'
+        ? '선택한 페이지에서 삭제할 열의 헤더 칸을 누르세요. 열은 모든 페이지에서 함께 삭제됩니다.'
         : action === 'row-add'
           ? '왼쪽 + 를 눌러 그 아래에 행을 추가하세요.'
           : action === 'row-del'
             ? '왼쪽 − 를 눌러 해당 행을 삭제하세요.'
-            : layoutOnly
-              ? '칸을 누르거나 드래그해 선택한 뒤, 글자 크기를 조절할 수 있습니다. 모든 물질 양식에 적용됩니다.'
-              : '칸을 누르거나 드래그해 선택한 뒤, 글자 크기를 조절할 수 있습니다.'
+            : !showColumns
+              ? rowScope === 'all'
+                ? '열 너비·행 높이·글자 등 양식 변경은 모든 설비에 적용됩니다. 행 추가·삭제는 모든 설비의 같은 위치에 반영됩니다.'
+                : '열 너비·행 높이·글자 등 양식 변경은 모든 설비에 적용됩니다. 행 추가·삭제는 이 설비 점검표에만 적용됩니다.'
+              : !showPages
+                ? '열·행·글자 등 양식 변경은 모든 물질에 적용됩니다. 제품명·수량 같은 내용은 각 물질에만 남습니다. 페이지는 각 물질 대장에서 추가하세요.'
+                : pageCount > 1
+                  ? `${selectedPageLabel ?? `${selectedPageIndex + 1}쪽`}을 선택한 상태입니다. 행 추가는 이 페이지에만 적용됩니다.`
+                  : '양식 변경은 모든 물질에 적용됩니다. 페이지 추가와 행 내용은 이 물질에만 적용됩니다.'
 
   return (
     <div className="chem-form-bar no-print">
       <span>{hint}</span>
       <div className="chem-form-tools">
+        {showColumns ? (
         <div className="chem-form-tool-group">
           <strong>열</strong>
           <button
@@ -981,6 +1026,7 @@ export function ChemFormEditBar({
             열 삭제
           </button>
         </div>
+        ) : null}
         <div className="chem-form-tool-group">
           <strong>행</strong>
           <button
@@ -1024,6 +1070,27 @@ export function ChemFormEditBar({
             <Plus size={14} />
           </button>
         </div>
+        {showPages ? (
+        <div className="chem-form-tool-group">
+          <strong>페이지</strong>
+          {pageCount > 1
+            ? Array.from({ length: pageCount }, (_, index) => (
+                <button
+                  key={index}
+                  className={`secondary-btn ${selectedPageIndex === index ? 'is-on' : ''}`}
+                  type="button"
+                  onClick={() => onSelectPage?.(index)}
+                >
+                  {index + 1}쪽
+                </button>
+              ))
+            : null}
+          <button className="secondary-btn" type="button" onClick={() => onAddPage?.()}>
+            <Plus size={14} />
+            페이지 추가
+          </button>
+        </div>
+        ) : null}
       </div>
     </div>
   )

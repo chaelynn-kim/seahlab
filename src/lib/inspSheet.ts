@@ -33,6 +33,25 @@ export type InspColId = 'equip' | 'no' | 'point' | 'timing' | 'criteria' | 'day'
 export interface InspFormLayout {
   colPct: Partial<Record<InspColId, number>>
   rowHeights: Record<string, number>
+  cellFonts?: Record<string, number>
+}
+
+export const INSP_FONT_MIN = 7
+export const INSP_FONT_MAX = 28
+
+export function inspCellId(rowId: string, colId: string): string {
+  return `${rowId}:${colId}`
+}
+
+export function clampInspCellFont(value: number): number {
+  return Math.min(INSP_FONT_MAX, Math.max(INSP_FONT_MIN, Math.round(value)))
+}
+
+export function defaultInspCellFont(cellId: string): number {
+  if (cellId.startsWith('banner-title')) return 16
+  if (cellId.startsWith('banner-')) return 12
+  if (cellId.startsWith('cols:')) return 11
+  return 9
 }
 
 const LAYOUT_KEY = 'inspFormLayoutById'
@@ -48,7 +67,15 @@ export const DEFAULT_INSP_COL_PCT: Record<InspColId, number> = {
 }
 
 export function emptyInspLayout(): InspFormLayout {
-  return { colPct: {}, rowHeights: {} }
+  return { colPct: {}, rowHeights: {}, cellFonts: {} }
+}
+
+function sanitizeFonts(saved: Record<string, number> | undefined): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(saved ?? {}).filter(
+      ([, size]) => Number.isFinite(size) && size >= INSP_FONT_MIN && size <= INSP_FONT_MAX,
+    ),
+  )
 }
 
 function sanitizeLayout(saved: Partial<InspFormLayout> | null | undefined): InspFormLayout {
@@ -59,7 +86,7 @@ function sanitizeLayout(saved: Partial<InspFormLayout> | null | undefined): Insp
   const rowHeights = Object.fromEntries(
     Object.entries(saved?.rowHeights ?? {}).filter(([, height]) => Number.isFinite(height) && height >= 18),
   )
-  return { colPct, rowHeights }
+  return { colPct, rowHeights, cellFonts: sanitizeFonts(saved?.cellFonts) }
 }
 
 export function loadInspFormLayout(equipmentId: string): InspFormLayout {
